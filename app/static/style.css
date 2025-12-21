@@ -1,0 +1,8 @@
+body { background-color: #0f172a; color: #e2e8f0; font-family: 'Inter', sans-serif; }
+.glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
+.markdown-body h1 { font-size: 1.5rem; font-weight: bold; margin-top: 1rem; color: #818cf8; }
+.markdown-body h2 { font-size: 1.25rem; font-weight: bold; margin-top: 1rem; color: #a5b4fc; }
+.markdown-body p { margin-bottom: 0.8rem; line-height: 1.6; color: #cbd5e1; }
+.markdown-body li { margin-left: 1.2rem; list-style-type: disc; }
+.loader { border: 4px solid #f3f3f3; border-top: 4px solid #6366f1; border-radius: 50%; width: 30px; height: 30px; animation: spin 1s linear infinite; }
+@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
