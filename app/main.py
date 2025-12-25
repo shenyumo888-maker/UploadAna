@@ -1,6 +1,7 @@
 import os
 from fastapi import FastAPI
 from app.core.config import APP_NAME
+from app.api import news  
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,6 +20,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 
 app.include_router(sentiment_router, prefix="/api")
 
+app.include_router(news.router, prefix="/api", tags=["News"])
 
 @app.get("/")
 def root():

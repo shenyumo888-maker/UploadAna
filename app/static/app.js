@@ -1,13 +1,18 @@
 // app.js 专门处理 Vue + ECharts
-const { createApp, ref, computed, nextTick } = Vue;
+const { createApp, ref, computed,onMounted, nextTick } = Vue;
 
 createApp({
     setup() {
         const topic = ref('');
         const loading = ref(false);
         const result = ref(null);
+        const hotTopics = ref([]); 
         const mdParser = window.markdownit();
         const reportRef = ref(null);
+
+        onMounted(() => {
+            fetchHotTopics();
+        });
 
         // 从后端python中抓取result
         const analyze = async () => {
@@ -37,6 +42,27 @@ createApp({
 
         const renderedMarkdown = computed(() => result.value ? mdParser.render(result.value.report_markdown) : '');
         
+        // 调用后端获取热搜
+        const fetchHotTopics = async () => {
+            try {
+                // 这里的路径对应你 FastAPI 里的路由 /api/hot-topics
+                const res = await fetch('/api/hot-topics');
+                const json = await res.json();
+                if (json.success) {
+                    hotTopics.value = json.data;
+                }
+            } catch (e) {
+                console.error("热搜获取失败:", e);
+                // 失败静默处理，或者你可以填入一些默认数据
+            }
+        };
+
+        // 点击热搜词直接分析
+        const applyHotTopic = (title) => {
+            topic.value = title;
+            analyze();
+        };
+
         const exportPdf = async () => {
             // if (!reportRef.value) {
             //     alert('请先生成报告');
@@ -210,24 +236,30 @@ createApp({
             chart.setOption({
                 ...commonOption,
                 tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                grid: { top: 10, bottom: 20, left: 10, right: 10, containLabel: true },
+                grid: { top: 10, bottom: 20, left: 10, right: 30, containLabel: true },
+                // === 修改点开始：交换 X 和 Y 轴 ===
                 xAxis: {
-                    type: 'category',
-                    data: data.map(i => i.name),
-                    axisLine: { lineStyle: { color: '#64748b' } },
-                    axisLabel: { color: '#e2e8f0', interval: 0, rotate: 30 }
-                },
-                yAxis: {
-                    type: 'value',
+                    type: 'value', // 数值在 X 轴
                     splitLine: { lineStyle: { color: '#334155' } },
                     axisLabel: { color: '#94a3b8' }
                 },
+                yAxis: {
+                    type: 'category', // 话题文字在 Y 轴
+                    data: data.map(i => i.name).reverse(), // 反转数据，让第一名排在最上面
+                    axisLine: { lineStyle: { color: '#64748b' } },
+                    axisLabel: { 
+                        color: '#e2e8f0', 
+                        width: 110,       // 限制文字宽度
+                        overflow: 'break' // 超出自动换行
+                    }
+                },
+                // === 修改点结束 ===
                 series: [{
                     type: 'bar',
-                    data: data.map(i => i.value),
+                    data: data.map(i => i.value).reverse(), // 数据也要反转
                     itemStyle: {
-                        borderRadius: [4, 4, 0, 0],
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                        borderRadius: [0, 4, 4, 0], // 圆角变成右边圆
+                        color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [ // 渐变色改成横向
                             { offset: 0, color: '#a78bfa' },
                             { offset: 1, color: '#7c3aed' }
                         ])
@@ -243,6 +275,8 @@ createApp({
                 loading, 
                 result, 
                 analyze, 
+                hotTopics,      
+                applyHotTopic, 
                 renderedMarkdown, 
                 getScoreColor,
                 reportRef,

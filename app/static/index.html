@@ -69,28 +69,71 @@
             </button>
         </div>
 
-        <!-- Dashboard -->
-        <div 
-            v-if="result" 
-            class="space-y-6 animate-fade-in-up"
-            ref="reportRef"
-        >
+        <!-- 热点推荐区域 (当没有生成报告且没有正在加载时显示) -->
+        <div v-if="!result && !loading" class="max-w-4xl mx-auto mt-12 animate-fade-in-up">
             
-            <!-- Top Stats Row -->
+            <!-- 标题 -->
+            <div class="flex items-center gap-2 mb-6 px-2">
+                <span class="text-2xl">🔥</span>
+                <h3 class="text-xl font-bold text-white tracking-wide">实时舆情热搜</h3>
+                <span class="text-xs text-slate-400 ml-auto border border-slate-700 px-2 py-1 rounded-lg">数据来源: Tavily Live</span>
+            </div>
+
+            <!-- 列表容器 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                
+                <!-- 循环渲染热点 -->
+                <div 
+                    v-for="(item, index) in hotTopics" 
+                    :key="index"
+                    @click="applyHotTopic(item.title)"
+                    class="group relative glass hover:bg-slate-700/50 transition-all duration-300 cursor-pointer rounded-xl p-4 flex items-center gap-4 border border-slate-700/50 hover:border-indigo-500/50 hover:-translate-y-1"
+                >
+                    <!-- 排名数字：前三名特殊颜色 -->
+                    <div 
+                        class="text-xl font-black italic w-8 text-center"
+                        :class="{
+                            'text-red-500': index === 0,
+                            'text-orange-500': index === 1,
+                            'text-yellow-500': index === 2,
+                            'text-slate-500': index > 2
+                        }"
+                    >
+                        {{ index + 1 }}
+                    </div>
+
+                    <!-- 内容 -->
+                    <div class="flex-1 min-w-0"> <!-- min-w-0 用于让 truncate 生效 -->
+                        <div class="text-slate-200 font-medium truncate group-hover:text-indigo-300 transition-colors">
+                            {{ item.title }}
+                        </div>
+                        <!-- 装饰性的小标签 -->
+                        <div class="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                            <span v-if="index < 3" class="bg-red-500/20 text-red-400 px-1.5 rounded text-[10px]">HOT</span>
+                            <span v-else class="bg-slate-700 text-slate-400 px-1.5 rounded text-[10px]">NEW</span>
+                            <span class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400">点击分析 &rarr;</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div v-if="result" class="space-y-6 animate-fade-in-up" ref="reportRef">
+            
+            <!-- 第一行：核心指标 (保留原样，很清晰) -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <!-- Sentiment Score -->
                 <div class="glass rounded-2xl p-6 text-center relative overflow-hidden flex flex-col justify-center">
                     <div class="text-slate-400 text-sm uppercase tracking-wider mb-2">情感指数</div>
                     <div class="text-5xl font-bold" :class="getScoreColor(result.sentiment_score)">
                         {{ result.sentiment_score }}
                     </div>
-                     <div class="text-lg mt-1 font-medium text-white">{{ result.sentiment_label }}</div>
+                    <div class="text-lg mt-1 font-medium text-white">{{ result.sentiment_label }}</div>
                 </div>
-
-                 <!-- Keywords -->
                 <div class="md:col-span-3 glass rounded-2xl p-6">
                     <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">舆论关键词</div>
-                     <div class="flex flex-wrap gap-2">
+                    <div class="flex flex-wrap gap-2">
                         <span v-for="word in result.keywords" class="px-3 py-1 bg-slate-700/50 rounded-full text-sm text-indigo-300 border border-indigo-500/30">
                             #{{ word }}
                         </span>
@@ -98,40 +141,44 @@
                 </div>
             </div>
 
-            <!-- Charts Row 1 -->
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                 <!-- Trend -->
-                <div class="md:col-span-2 glass rounded-2xl p-6 min-h-[350px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">热度趋势</div>
-                    <div id="trendChart" class="w-full h-full min-h-[300px]"></div>
+            <!-- 第二行：核心趋势 (改为全宽) -->
+            <!-- 逻辑：时间趋势包含信息量大，横向拉长有利于看清时间轴 -->
+            <div class="glass rounded-2xl p-6 min-h-[400px]">
+                <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">热度趋势分析</div>
+                <div id="trendChart" class="w-full h-full min-h-[340px]"></div>
+            </div>
+
+            <!-- 第三行：分布分析 (改为双列) -->
+            <!-- 逻辑：情感和来源属于“占比类”数据，左右各一半，饼图/环形图有足够的正方形空间 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 情感分布 -->
+                <div class="glass rounded-2xl p-6 min-h-[380px]">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">用户情感分布</div>
+                    <div id="sentimentChart" class="w-full h-full min-h-[320px]"></div>
                 </div>
-                <!-- Sentiment Dist -->
-                <div class="glass rounded-2xl p-6 min-h-[350px]">
-                     <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">情感分布</div>
-                    <div id="sentimentChart" class="w-full h-full min-h-[300px]"></div>
+                <!-- 来源分布 -->
+                <div class="glass rounded-2xl p-6 min-h-[380px]">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">媒体来源构成</div>
+                    <div id="sourceChart" class="w-full h-full min-h-[320px]"></div>
                 </div>
             </div>
 
-            <!-- Charts Row 2 -->
-             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <!-- Source Dist -->
-                <div class="glass rounded-2xl p-6 min-h-[350px]">
-                     <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">来源分布</div>
-                    <div id="sourceChart" class="w-full h-full min-h-[300px]"></div>
+            <!-- 第四行：详细排布 (改为双列，适合长文字) -->
+            <!-- 逻辑：地域和话题通常文字较长，给它们更大的宽度，建议在 ECharts 里用“横向柱状图” -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- 地域分布 -->
+                <div class="glass rounded-2xl p-6 min-h-[400px]">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">地域关注度 Top 10</div>
+                    <div id="regionChart" class="w-full h-full min-h-[340px]"></div>
                 </div>
-                <!-- Regional Dist -->
-                <div class="glass rounded-2xl p-6 min-h-[350px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">地域分布</div>
-                    <div id="regionChart" class="w-full h-full min-h-[300px]"></div>
-                </div>
-                 <!-- Related Topics -->
-                <div class="glass rounded-2xl p-6 min-h-[350px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">关联话题</div>
-                    <div id="topicChart" class="w-full h-full min-h-[300px]"></div>
+                <!-- 关联话题 -->
+                <div class="glass rounded-2xl p-6 min-h-[400px]">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">核心关联话题</div>
+                    <div id="topicChart" class="w-full h-full min-h-[340px]"></div>
                 </div>
             </div>
 
-            <!-- Report -->
+            <!-- Report (保留原样) -->
             <div class="glass rounded-2xl p-8">
                 <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
                     <h2 class="text-2xl font-bold text-white">深度分析报告</h2>
