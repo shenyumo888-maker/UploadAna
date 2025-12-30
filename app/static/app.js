@@ -9,10 +9,20 @@ createApp({
         const hotTopics = ref([]);
         const mdParser = window.markdownit();
         const reportRef = ref(null);
+        const hotLoading = ref(false); 
+        const toastMsg = ref('');//提示框消息文字
 
         onMounted(() => {
             fetchHotTopics();
         });
+
+        const showToast = (text) => {
+            toastMsg.value = text;
+            // 3秒后自动消失
+            setTimeout(() => {
+                toastMsg.value = '';
+            }, 3000);
+        };
 
         // 从后端python中抓取result
         const analyze = async () => {
@@ -64,24 +74,41 @@ createApp({
             return segments;
         });
 
-        const fetchHotTopics = async () => {
-            try {
-                // 这里的路径对应你 FastAPI 里的路由 /api/hot-topics
-                const res = await fetch('/api/hot-topics');
-                const json = await res.json();
-                if (json.success) {
-                    hotTopics.value = json.data;
-                }
-            } catch (e) {
-                console.error("热搜获取失败:", e);
-                // 失败静默处理，或者你可以填入一些默认数据
-            }
-        };
-
         // 点击热搜词直接分析
         const applyHotTopic = (title) => {
             topic.value = title;
             analyze();
+        };
+
+        const fetchHotTopics = async () => {
+            // 如果正在加载中，防止重复点击
+            if (hotLoading.value) return;
+            
+            hotLoading.value = true; // 开始转圈
+            try {
+                const res = await fetch('/api/hot-topics');
+                const json = await res.json();
+                if (json.success) {
+                    const oldData = JSON.stringify(hotTopics.value);
+                    const newData = JSON.stringify(json.data);
+
+                    if (oldData === newData && hotTopics.value.length > 0) {
+                        // 数据完全一样
+                        showToast('当前已是最新榜单，暂无更新 ✨');
+                    } else {
+                        // 数据变了，更新并提示
+                        hotTopics.value = json.data;
+                        showToast('热搜榜单更新成功 🚀');
+                    }
+                }
+            } catch (e) {
+                console.error("热搜获取失败:", e);
+            } finally {
+                // 稍微延迟一点点，让用户看清转圈动画（可选体验优化）
+                setTimeout(() => {
+                    hotLoading.value = false; // 停止转圈
+                }, 500);
+            }
         };
 
         const exportPdf = async () => {
@@ -303,7 +330,10 @@ createApp({
             mdParser,
             getScoreColor,
             reportRef,
-            exportPdf
+            toastMsg,  
+            exportPdf,
+            hotLoading,  
+            fetchHotTopics
         };
     }
 }).mount('#app');
