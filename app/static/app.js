@@ -160,7 +160,7 @@ createApp({
             chartInstances.length = 0;
 
             // 必须检查 DOM 是否存在 (因为现在是 v-if 动态渲染)
-            if (data.trend_data && document.getElementById('trendChart')) initTrendChart(data.trend_data);
+            if (data.trend_data && document.getElementById('trendChart')) initTrendChart(data.trend_data,data.forecast_data);
             if (data.sentiment_distribution && document.getElementById('sentimentChart')) initSentimentChart(data.sentiment_distribution);
             if (data.source_distribution && document.getElementById('sourceChart')) initSourceChart(data.source_distribution);
             if (data.regional_distribution && document.getElementById('regionChart')) initRegionChart(data.regional_distribution);
@@ -173,40 +173,123 @@ createApp({
             textStyle: { fontFamily: 'Inter, sans-serif' }
         };
 
-        const initTrendChart = (data) => {
+        const initTrendChart = (historyData, forecastData) => {
+            // 容错处理：如果后端没返回预测数据，给个空数组
+            const safeForecast = forecastData || [];
+            
             const chart = echarts.init(document.getElementById('trendChart'));
             chartInstances.push(chart);
+
+            // 1. 准备 X 轴数据 (历史日期 + 预测日期)
+            // 注意：为了让线连起来，预测数据的第一个点最好也是历史数据的最后一个点
+            // 这里我们简单处理，直接拼接日期
+            const historyDates = historyData.map(i => i.date);
+            const forecastDates = safeForecast.map(i => i.date);
+            const allDates = [...historyDates, ...forecastDates];
+
+            // 2. 准备 Y 轴数据
+            // 历史数据：对应历史日期，预测部分填 null (不显示)
+            const historyScores = historyData.map(i => i.score);
+            
+            // 预测数据：为了画出连续的线，我们需要把历史数据的最后一个点作为预测数据的起点
+            // 创建一个全是 null 的数组，长度等于历史数据长度-1
+            const gapData = new Array(historyScores.length - 1).fill(null);
+            // 把历史最后一个点加进去
+            const lastHistoryScore = historyScores[historyScores.length - 1];
+            // 拼接：[null, null, ..., 历史最后一点, 预测1, 预测2...]
+            const forecastScores = [...gapData, lastHistoryScore, ...safeForecast.map(i => i.score)];
+
             chart.setOption({
                 ...commonOption,
-                grid: { top: 30, bottom: 20, left: 40, right: 20, containLabel: true },
-                tooltip: { trigger: 'axis' },
+                // 标题配置
+                title: {
+                    text: '态势感知：历史走势与AI预测',
+                    left: 'center',
+                    top: '0%',
+                    textStyle: { color: '#94a3b8', fontSize: 14, fontWeight: 'normal' }
+                },
+                grid: { top: 50, bottom: 20, left: 40, right: 20, containLabel: true },
+                tooltip: { 
+                    trigger: 'axis',
+                    formatter: function (params) {
+                        let result = params[0].name + '<br/>';
+                        params.forEach(item => {
+                            if (item.value !== undefined && item.value !== null) {
+                                // 区分历史和预测
+                                const label = item.seriesName === '历史热度' ? '当前热度' : 'AI预测热度';
+                                result += `<span style="display:inline-block;margin-right:5px;border-radius:10px;width:10px;height:10px;background-color:${item.color};"></span>${label}: ${item.value}<br/>`;
+                            }
+                        });
+                        return result;
+                    }
+                },
+                legend: {
+                    data: ['历史热度', '趋势预测'],
+                    top: '25px',
+                    textStyle: { color: '#cbd5e1' }
+                },
                 xAxis: {
                     type: 'category',
-                    data: data.map(i => i.date),
+                    data: allDates,
+                    boundaryGap: false, // 让线顶头画
                     axisLine: { lineStyle: { color: '#64748b' } },
                     axisLabel: { color: '#94a3b8' }
                 },
                 yAxis: {
                     type: 'value',
-                    splitLine: { lineStyle: { color: '#334155' } },
+                    splitLine: { lineStyle: { color: '#334155', type: 'dashed' } },
                     axisLine: { show: false },
                     axisLabel: { color: '#94a3b8' }
                 },
-                series: [{
-                    data: data.map(i => i.score),
-                    type: 'line',
-                    smooth: true,
-                    symbol: 'circle',
-                    symbolSize: 8,
-                    lineStyle: { color: '#6366f1', width: 4 },
-                    itemStyle: { color: '#818cf8', borderColor: '#fff', borderWidth: 2 },
-                    areaStyle: {
-                        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                            { offset: 0, color: 'rgba(99, 102, 241, 0.5)' },
-                            { offset: 1, color: 'rgba(99, 102, 241, 0)' }
-                        ])
+                series: [
+                    // 第一条线：历史热度 (实线)
+                    {
+                        name: '历史热度',
+                        type: 'line',
+                        data: [...historyScores, ...new Array(forecastDates.length).fill(null)], // 后面补null
+                        smooth: true,
+                        symbol: 'circle',
+                        symbolSize: 8,
+                        itemStyle: { color: '#6366f1' }, // 蓝紫色
+                        lineStyle: { width: 3 },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(99, 102, 241, 0.4)' },
+                                { offset: 1, color: 'rgba(99, 102, 241, 0)' }
+                            ])
+                        },
+                        // 只显示最后一个点的标签，标明当前热度
+                        label: {
+                            show: true,
+                            position: 'top',
+                            color: '#fff',
+                            formatter: (p) => p.dataIndex === historyScores.length - 1 ? `{a|当前:${p.value}}` : '',
+                            rich: {
+                                a: { backgroundColor: '#6366f1', color: '#fff', padding: [2, 5], borderRadius: 3 }
+                            }
+                        }
+                    },
+                    // 第二条线：趋势预测 (虚线)
+                    {
+                        name: '趋势预测',
+                        type: 'line',
+                        data: forecastScores,
+                        smooth: true,
+                        symbol: 'emptyCircle',
+                        symbolSize: 6,
+                        itemStyle: { color: '#f43f5e' }, // 玫瑰红，表示预测/风险
+                        lineStyle: { 
+                            width: 3, 
+                            type: 'dashed' // 关键：虚线
+                        },
+                        label: {
+                            show: true,
+                            position: 'top',
+                            color: '#f43f5e',
+                            formatter: (p) => p.dataIndex === forecastScores.length - 1 ? '预测' : ''
+                        }
                     }
-                }]
+                ]
             });
         };
 

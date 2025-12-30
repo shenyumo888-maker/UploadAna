@@ -1,6 +1,6 @@
 def sentiment_prompt(topic: str, context: str) -> str:
     return f"""
-    你是一个高级舆情分析专家。请根据以下互联网搜索结果，对话题“{topic}”进行深度分析。
+    你是一个高级舆情分析专家。请根据以下互联网搜索结果，对话题“{topic}”进行深度分析以及对未来可能发展的态势进行预测和感知。
     
     搜索结果上下文：
     {context}
@@ -11,11 +11,18 @@ def sentiment_prompt(topic: str, context: str) -> str:
         "sentiment_score": 0-100的整数 (0为极度负面，50中立，100极度正面),
         "sentiment_label": "正面/负面/中立/争议",
         "keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"],
+        // --- 核心修改：将数据分为历史和预测 ---
         "trend_data": [
-            {{"date": "最近5天的日期1", "score": 预估热度值0-100}},
-            {{"date": "最近5天的日期2", "score": 预估热度值0-100}},
-            ...
+            {{"date": "MM-DD", "score": 实际热度值}},
+            {{"date": "MM-DD", "score": 实际热度值}},
+            ... (最近5-7天的历史数据,请再三确认时间是否正确！不准出错！)
         ],
+        "forecast_data": [
+            {{"date": "MM-DD", "score": 预测热度值}},
+            ... (未来2-3天的预测数据，基于当前趋势推演，请确保你的推演有依据)
+        ],
+        // ----------------------------------
+
         "sentiment_distribution": [
              {{"name": "正面", "value": 百分比数值}},
              {{"name": "中立", "value": 百分比数值}},
