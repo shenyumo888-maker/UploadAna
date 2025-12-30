@@ -12,21 +12,20 @@ import streamlit as st
 
 
 def login_page():
-    # 设置页面配置，模拟暗色背景
-    # 注意：Streamlit 无法完美还原你的 CSS 截图，但可以通过自定义 CSS 接近
+    
     st.markdown("""
         <style>
         .stApp {
             background-color: #0f1219;
             color: white;
         }
-        /* 输入框样式 */
+       
         .stTextInput input {
             background-color: rgba(30, 41, 59, 0.6);
             color: white;
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
-        /* 隐藏侧边栏 */
+        
         [data-testid="stSidebar"] {
             display: none;
         }
@@ -39,7 +38,7 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        # 这里是一个简单的登录框
+        
         username = st.text_input("账号", placeholder="请输入管理员账号")
         password = st.text_input("密码", type="password", placeholder="请输入密码")
         
@@ -50,15 +49,15 @@ def login_page():
             else:
                 st.error("账号或密码错误")
 
-# --- 核心逻辑控制 ---
 
-# 检查 session 中是否有登录标记
+
+
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
     login_page()
-    st.stop() # 重点！如果没有登录，就停止运行后面的代码
+    st.stop() 
 
 
 
