@@ -1,28 +1,29 @@
 <!-- HTML 只保留 DOM + Tailwind 样式 -->
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN" class="dark">
 <!-- class="dark"：Tailwind 的 暗黑模式开关 只要加了 dark，就能用 dark: 前缀控制深色样式 -->
 
 <!-- <head>：加载“外部工具”和配置 -->
+
 <head>
     <!-- meta：元数据：意为描述数据的数据 有很多不同种类的 <meta> 元素可以被包含进你的页面的 <head> 元素 -->
     <meta charset="UTF-8">
     <!-- viewport作用：让网页在手机端也能显示正常 -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <!-- name 指定了 meta 元素的类型；说明该元素包含了什么类型的信息。content 指定了实际的元数据内容。 -->
-    
+
     <title>AI 舆情分析系统</title>
-    
+
     <!-- <script> 元素也应当放在文档的头部，并包含 src 属性来指向需要加载的 JavaScript 文件路径，同时最好加上 defer 以告诉浏览器在解析完成 HTML 后再加载 JavaScript。-->
     <!-- Tailwind CSS -->
-    <script src="https://cdn.tailwindcss.com"></script> 
-    
+    <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- Vue 3 -->
     <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    
+
     <!-- ECharts -->
     <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    
+
     <!-- Markdown Parser -->
     <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.2/dist/markdown-it.min.js"></script>
 
@@ -41,7 +42,8 @@
     <div id="app" class="max-w-6xl mx-auto">
         <!-- Header -->
         <header class="mb-10 text-center">
-            <h1 class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 mb-2">
+            <h1
+                class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 mb-2">
                 自媒体网络舆情事件分析系统
             </h1>
             <p class="text-slate-400">西藏大学-上海大学多媒体与人工智能安全研究小组</p>
@@ -49,56 +51,45 @@
 
         <!-- 输入区域 -->
         <div class="max-w-2xl mx-auto mb-12 glass rounded-2xl p-2 flex shadow-2xl shadow-indigo-500/20" gap-3>
-            <input v-model="topic" @keyup.enter="analyze" type="text" placeholder="输入话题，例如：'小米SU7发布会'" class="flex-1 bg-transparent border-none outline-none text-white px-4 text-lg placeholder-slate-500">
+            <input v-model="topic" @keyup.enter="analyze" type="text" placeholder="输入话题，例如：'小米SU7发布会'"
+                class="flex-1 bg-transparent border-none outline-none text-white px-4 text-lg placeholder-slate-500">
             <!-- 生成报告 -->
-            <button
-                @click="analyze"
-                :disabled="loading"
-                class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-medium flex items-center justify-center transition hover:-translate-1 hover:scale-105"
-            >
+            <button @click="analyze" :disabled="loading"
+                class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-medium flex items-center justify-center transition hover:-translate-1 hover:scale-105">
                 <span v-if="!loading">生成报告</span>
                 <div v-else class="loader"></div>
             </button>
 
-            <button
-                v-if="result"
-                @click="exportPdf"
-                class="border ml-2 border-indigo-600 text-indigo-600 px-6 py-3 rounded-xl font-medium hover:bg-indigo-50 transition hover:-translate-1 hover:scale-105"
-            >
+            <button v-if="result" @click="exportPdf"
+                class="border ml-2 border-indigo-600 text-indigo-600 px-6 py-3 rounded-xl font-medium hover:bg-indigo-50 transition hover:-translate-1 hover:scale-105">
                 导出 PDF
             </button>
         </div>
 
         <!-- 热点推荐区域 (当没有生成报告且没有正在加载时显示) -->
         <div v-if="!result && !loading" class="max-w-4xl mx-auto mt-12 animate-fade-in-up">
-            
+
             <!-- 标题 -->
             <div class="flex items-center gap-2 mb-6 px-2">
                 <span class="text-2xl">🔥</span>
                 <h3 class="text-xl font-bold text-white tracking-wide">实时舆情热搜</h3>
-                <span class="text-xs text-slate-400 ml-auto border border-slate-700 px-2 py-1 rounded-lg">数据来源: Tavily Live</span>
+                <span class="text-xs text-slate-400 ml-auto border border-slate-700 px-2 py-1 rounded-lg">数据来源: Tavily
+                    Live</span>
             </div>
 
             <!-- 列表容器 -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                
+
                 <!-- 循环渲染热点 -->
-                <div 
-                    v-for="(item, index) in hotTopics" 
-                    :key="index"
-                    @click="applyHotTopic(item.title)"
-                    class="group relative glass hover:bg-slate-700/50 transition-all duration-300 cursor-pointer rounded-xl p-4 flex items-center gap-4 border border-slate-700/50 hover:border-indigo-500/50 hover:-translate-y-1"
-                >
+                <div v-for="(item, index) in hotTopics" :key="index" @click="applyHotTopic(item.title)"
+                    class="group relative glass hover:bg-slate-700/50 transition-all duration-300 cursor-pointer rounded-xl p-4 flex items-center gap-4 border border-slate-700/50 hover:border-indigo-500/50 hover:-translate-y-1">
                     <!-- 排名数字：前三名特殊颜色 -->
-                    <div 
-                        class="text-xl font-black italic w-8 text-center"
-                        :class="{
+                    <div class="text-xl font-black italic w-8 text-center" :class="{
                             'text-red-500': index === 0,
                             'text-orange-500': index === 1,
                             'text-yellow-500': index === 2,
                             'text-slate-500': index > 2
-                        }"
-                    >
+                        }">
                         {{ index + 1 }}
                     </div>
 
@@ -109,9 +100,11 @@
                         </div>
                         <!-- 装饰性的小标签 -->
                         <div class="text-xs text-slate-500 mt-1 flex items-center gap-2">
-                            <span v-if="index < 3" class="bg-red-500/20 text-red-400 px-1.5 rounded text-[10px]">HOT</span>
+                            <span v-if="index < 3"
+                                class="bg-red-500/20 text-red-400 px-1.5 rounded text-[10px]">HOT</span>
                             <span v-else class="bg-slate-700 text-slate-400 px-1.5 rounded text-[10px]">NEW</span>
-                            <span class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400">点击分析 &rarr;</span>
+                            <span class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400">点击分析
+                                &rarr;</span>
                         </div>
                     </div>
                 </div>
@@ -121,7 +114,7 @@
 
         <!-- Dashboard -->
         <div v-if="result" class="space-y-6 animate-fade-in-up" ref="reportRef">
-            
+
             <!-- 第一行：核心指标 (保留原样，很清晰) -->
             <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
                 <div class="glass rounded-2xl p-6 text-center relative overflow-hidden flex flex-col justify-center">
@@ -134,62 +127,84 @@
                 <div class="md:col-span-3 glass rounded-2xl p-6">
                     <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">舆论关键词</div>
                     <div class="flex flex-wrap gap-2">
-                        <span v-for="word in result.keywords" class="px-3 py-1 bg-slate-700/50 rounded-full text-sm text-indigo-300 border border-indigo-500/30">
+                        <span v-for="word in result.keywords"
+                            class="px-3 py-1 bg-slate-700/50 rounded-full text-sm text-indigo-300 border border-indigo-500/30">
                             #{{ word }}
                         </span>
                     </div>
                 </div>
             </div>
 
-            <!-- 第二行：核心趋势 (改为全宽) -->
-            <!-- 逻辑：时间趋势包含信息量大，横向拉长有利于看清时间轴 -->
-            <div class="glass rounded-2xl p-6 min-h-[400px]">
-                <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">热度趋势分析</div>
-                <div id="trendChart" class="w-full h-full min-h-[340px]"></div>
-            </div>
-
-            <!-- 第三行：分布分析 (改为双列) -->
-            <!-- 逻辑：情感和来源属于“占比类”数据，左右各一半，饼图/环形图有足够的正方形空间 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- 情感分布 -->
-                <div class="glass rounded-2xl p-6 min-h-[380px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">用户情感分布</div>
-                    <div id="sentimentChart" class="w-full h-full min-h-[320px]"></div>
-                </div>
-                <!-- 来源分布 -->
-                <div class="glass rounded-2xl p-6 min-h-[380px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">媒体来源构成</div>
-                    <div id="sourceChart" class="w-full h-full min-h-[320px]"></div>
-                </div>
-            </div>
-
-            <!-- 第四行：详细排布 (改为双列，适合长文字) -->
-            <!-- 逻辑：地域和话题通常文字较长，给它们更大的宽度，建议在 ECharts 里用“横向柱状图” -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- 地域分布 -->
-                <div class="glass rounded-2xl p-6 min-h-[400px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">地域关注度 Top 10</div>
-                    <div id="regionChart" class="w-full h-full min-h-[340px]"></div>
-                </div>
-                <!-- 关联话题 -->
-                <div class="glass rounded-2xl p-6 min-h-[400px]">
-                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">核心关联话题</div>
-                    <div id="topicChart" class="w-full h-full min-h-[340px]"></div>
-                </div>
-            </div>
-
-            <!-- Report (保留原样) -->
-            <div class="glass rounded-2xl p-8">
+            <!-- 动态报告流 -->
+            <div class="glass rounded-2xl p-8 min-h-[500px]">
                 <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
                     <h2 class="text-2xl font-bold text-white">深度分析报告</h2>
-                    <span class="text-xs text-slate-300 px-2 py-1 rounded">AI Generated</span>
+                    <span class="text-xs text-slate-300 px-2 py-1 rounded">AI Generated (Enhanced)</span>
                 </div>
-                <div class="markdown-body text-slate-300" v-html="renderedMarkdown"></div>
+
+                <div class="space-y-8 text-slate-300">
+                    <template v-for="(segment, idx) in reportSegments" :key="idx">
+
+                        <!-- 文本段落 -->
+                        <div v-if="segment.type === 'text'" class="markdown-body"
+                            v-html="mdParser.render(segment.content)">
+                        </div>
+
+                        <!-- 图表插入：热度趋势 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'TREND'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">热度趋势分析
+                                </div>
+                                <div id="trendChart" class="w-full h-[400px]"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：情感分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'SENTIMENT'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">用户情感分布
+                                </div>
+                                <div id="sentimentChart" class="w-full h-[400px]"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：来源分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'SOURCE'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">媒体来源构成
+                                </div>
+                                <div id="sourceChart" class="w-full h-[400px]"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：地域分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'REGION'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">地域关注度 Top
+                                    10</div>
+                                <div id="regionChart" class="w-full h-[400px]"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：关联话题 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'TOPIC'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">核心关联话题
+                                </div>
+                                <div id="topicChart" class="w-full h-[400px]"></div>
+                            </div>
+                        </div>
+
+                    </template>
+                </div>
             </div>
+
+
         </div>
     </div>
 
     <!-- Vue 逻辑 -->
     <script src="/static/app.js"></script>
 </body>
+
 </html>

@@ -1,12 +1,12 @@
 // app.js 专门处理 Vue + ECharts
-const { createApp, ref, computed,onMounted, nextTick } = Vue;
+const { createApp, ref, computed, onMounted, nextTick } = Vue;
 
 createApp({
     setup() {
         const topic = ref('');
         const loading = ref(false);
         const result = ref(null);
-        const hotTopics = ref([]); 
+        const hotTopics = ref([]);
         const mdParser = window.markdownit();
         const reportRef = ref(null);
 
@@ -40,9 +40,30 @@ createApp({
             }
         };
 
-        const renderedMarkdown = computed(() => result.value ? mdParser.render(result.value.report_markdown) : '');
-        
-        // 调用后端获取热搜
+        // 解析 Markdown 并拆分为 [文字, 图表, 文字, 图表...] 的结构
+        const reportSegments = computed(() => {
+            if (!result.value || !result.value.report_markdown) return [];
+
+            const raw = result.value.report_markdown;
+            // 正则匹配 [[CHART:XXX]]
+            // Split 会保留捕获组，所以结果类似 ["Text...", "TREND", "Text...", "SENTIMENT", ...]
+            const parts = raw.split(/\[\[CHART:([A-Z]+)\]\]/);
+
+            const segments = [];
+            for (let i = 0; i < parts.length; i++) {
+                // 偶数索引是文本
+                if (i % 2 === 0) {
+                    if (parts[i].trim()) {
+                        segments.push({ type: 'text', content: parts[i] });
+                    }
+                } else {
+                    // 奇数索引是 Chart Type (比如 TREND, SENTIMENT)
+                    segments.push({ type: 'chart', chartType: parts[i] });
+                }
+            }
+            return segments;
+        });
+
         const fetchHotTopics = async () => {
             try {
                 // 这里的路径对应你 FastAPI 里的路由 /api/hot-topics
@@ -111,11 +132,12 @@ createApp({
             chartInstances.forEach(c => c.dispose());
             chartInstances.length = 0;
 
-            if (data.trend_data) initTrendChart(data.trend_data);
-            if (data.sentiment_distribution) initSentimentChart(data.sentiment_distribution);
-            if (data.source_distribution) initSourceChart(data.source_distribution);
-            if (data.regional_distribution) initRegionChart(data.regional_distribution);
-            if (data.related_topics) initTopicChart(data.related_topics);
+            // 必须检查 DOM 是否存在 (因为现在是 v-if 动态渲染)
+            if (data.trend_data && document.getElementById('trendChart')) initTrendChart(data.trend_data);
+            if (data.sentiment_distribution && document.getElementById('sentimentChart')) initSentimentChart(data.sentiment_distribution);
+            if (data.source_distribution && document.getElementById('sourceChart')) initSourceChart(data.source_distribution);
+            if (data.regional_distribution && document.getElementById('regionChart')) initRegionChart(data.regional_distribution);
+            if (data.related_topics && document.getElementById('topicChart')) initTopicChart(data.related_topics);
         };
 
         const commonOption = {
@@ -247,8 +269,8 @@ createApp({
                     type: 'category', // 话题文字在 Y 轴
                     data: data.map(i => i.name).reverse(), // 反转数据，让第一名排在最上面
                     axisLine: { lineStyle: { color: '#64748b' } },
-                    axisLabel: { 
-                        color: '#e2e8f0', 
+                    axisLabel: {
+                        color: '#e2e8f0',
                         width: 110,       // 限制文字宽度
                         overflow: 'break' // 超出自动换行
                     }
@@ -270,17 +292,18 @@ createApp({
 
         window.addEventListener('resize', () => chartInstances.forEach(c => c.resize()));
 
-        return { 
-                topic, 
-                loading, 
-                result, 
-                analyze, 
-                hotTopics,      
-                applyHotTopic, 
-                renderedMarkdown, 
-                getScoreColor,
-                reportRef,
-                exportPdf
-            };
+        return {
+            topic,
+            loading,
+            result,
+            analyze,
+            hotTopics,
+            applyHotTopic,
+            reportSegments,
+            mdParser,
+            getScoreColor,
+            reportRef,
+            exportPdf
+        };
     }
 }).mount('#app');
