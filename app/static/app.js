@@ -37,11 +37,14 @@ createApp({
 
             // 模拟进度条增长
             const timer = setInterval(() => {
-                if (loadingProgress.value < 95) {
-                    loadingProgress.value += Math.random() * 1.5;
+                if (loadingProgress.value < 98) {
+                    // 随着进度增加，增长速度稍微变慢，但保持合理的步长
+                    const remaining = 100 - loadingProgress.value;
+                    loadingProgress.value += Math.random() * (remaining / 12);
+
                     if (loadingProgress.value < 30) {
                         loadingMsg.value = 'Step 1: 正在深度解析事件背景...';
-                    } else if (loadingProgress.value < 65) {
+                    } else if (loadingProgress.value < 60) {
                         loadingMsg.value = 'Step 2: 正在提取核心数据与可视化指标...';
                     } else {
                         loadingMsg.value = 'Step 3: 正在生成专家对策与研判建议...';
@@ -85,14 +88,23 @@ createApp({
             const parts = raw.split(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/);
 
             const segments = [];
+            const validCharts = ['TREND', 'SENTIMENT', 'SOURCE', 'REGION', 'TOPIC'];
+
             for (let i = 0; i < parts.length; i++) {
                 if (i % 2 === 0) {
-                    if (parts[i]) {
+                    // 只有当文本部分非空或非纯空白时才添加
+                    if (parts[i] && parts[i].trim().length > 0) {
                         segments.push({ type: 'text', content: parts[i] });
                     }
                 } else {
-                    // 统一转换为大写，方便前端模板判断
-                    segments.push({ type: 'chart', chartType: parts[i].toUpperCase() });
+                    const type = parts[i].toUpperCase();
+                    // 只有在预定义的有效图表列表中才添加图表段
+                    if (validCharts.includes(type)) {
+                        segments.push({ type: 'chart', chartType: type });
+                    } else {
+                        // 如果不是预期图表，将其作为普通文本放回去（防止误伤）
+                        segments.push({ type: 'text', content: `[[CHART: ${parts[i]}]]` });
+                    }
                 }
             }
             return segments;
