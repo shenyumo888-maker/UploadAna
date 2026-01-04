@@ -9,7 +9,7 @@ createApp({
         const hotTopics = ref([]);
         const mdParser = window.markdownit();
         const reportRef = ref(null);
-        const hotLoading = ref(false); 
+        const hotLoading = ref(false);
         const toastMsg = ref('');//提示框消息文字
 
         onMounted(() => {
@@ -24,11 +24,30 @@ createApp({
             }, 3000);
         };
 
+        const loadingProgress = ref(0);
+        const loadingMsg = ref('正在启动分析引擎...');
+
         // 从后端python中抓取result
         const analyze = async () => {
             if (!topic.value) return;
             loading.value = true;
             result.value = null;
+            loadingProgress.value = 0;
+            loadingMsg.value = 'Phase 1: 正在深度解析事件背景...';
+
+            // 模拟进度条增长
+            const timer = setInterval(() => {
+                if (loadingProgress.value < 95) {
+                    loadingProgress.value += Math.random() * 1.5;
+                    if (loadingProgress.value < 30) {
+                        loadingMsg.value = 'Step 1: 正在深度解析事件背景...';
+                    } else if (loadingProgress.value < 65) {
+                        loadingMsg.value = 'Step 2: 正在提取核心数据与可视化指标...';
+                    } else {
+                        loadingMsg.value = 'Step 3: 正在生成专家对策与研判建议...';
+                    }
+                }
+            }, 800);
 
             try {
                 const res = await fetch('/api/analyze', {
@@ -37,12 +56,19 @@ createApp({
                     body: JSON.stringify({ topic: topic.value })
                 });
                 const data = await res.json();
-                result.value = data;
 
+                clearInterval(timer);
+                loadingProgress.value = 100;
+                loadingMsg.value = '分析完成！正在同步报告内容...';
+
+                await new Promise(r => setTimeout(r, 600)); // 停顿一下让用户看清完成状态
+
+                result.value = data;
                 await nextTick();
                 initCharts(data);
 
             } catch (e) {
+                clearInterval(timer);
                 console.error(e);
                 alert('分析失败，请检查后端日志');
             } finally {
@@ -55,20 +81,18 @@ createApp({
             if (!result.value || !result.value.report_markdown) return [];
 
             const raw = result.value.report_markdown;
-            // 正则匹配 [[CHART:XXX]]
-            // Split 会保留捕获组，所以结果类似 ["Text...", "TREND", "Text...", "SENTIMENT", ...]
-            const parts = raw.split(/\[\[CHART:([A-Z]+)\]\]/);
+            // 增强正则：忽略大小写，允许冒号前后有空格
+            const parts = raw.split(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/);
 
             const segments = [];
             for (let i = 0; i < parts.length; i++) {
-                // 偶数索引是文本
                 if (i % 2 === 0) {
-                    if (parts[i].trim()) {
+                    if (parts[i]) {
                         segments.push({ type: 'text', content: parts[i] });
                     }
                 } else {
-                    // 奇数索引是 Chart Type (比如 TREND, SENTIMENT)
-                    segments.push({ type: 'chart', chartType: parts[i] });
+                    // 统一转换为大写，方便前端模板判断
+                    segments.push({ type: 'chart', chartType: parts[i].toUpperCase() });
                 }
             }
             return segments;
@@ -83,7 +107,7 @@ createApp({
         const fetchHotTopics = async () => {
             // 如果正在加载中，防止重复点击
             if (hotLoading.value) return;
-            
+
             hotLoading.value = true; // 开始转圈
             try {
                 const res = await fetch('/api/hot-topics');
@@ -160,7 +184,7 @@ createApp({
             chartInstances.length = 0;
 
             // 必须检查 DOM 是否存在 (因为现在是 v-if 动态渲染)
-            if (data.trend_data && document.getElementById('trendChart')) initTrendChart(data.trend_data,data.forecast_data);
+            if (data.trend_data && document.getElementById('trendChart')) initTrendChart(data.trend_data, data.forecast_data);
             if (data.sentiment_distribution && document.getElementById('sentimentChart')) initSentimentChart(data.sentiment_distribution);
             if (data.source_distribution && document.getElementById('sourceChart')) initSourceChart(data.source_distribution);
             if (data.regional_distribution && document.getElementById('regionChart')) initRegionChart(data.regional_distribution);
@@ -176,7 +200,7 @@ createApp({
         const initTrendChart = (historyData, forecastData) => {
             // 容错处理：如果后端没返回预测数据，给个空数组
             const safeForecast = forecastData || [];
-            
+
             const chart = echarts.init(document.getElementById('trendChart'));
             chartInstances.push(chart);
 
@@ -190,7 +214,7 @@ createApp({
             // 2. 准备 Y 轴数据
             // 历史数据：对应历史日期，预测部分填 null (不显示)
             const historyScores = historyData.map(i => i.score);
-            
+
             // 预测数据：为了画出连续的线，我们需要把历史数据的最后一个点作为预测数据的起点
             // 创建一个全是 null 的数组，长度等于历史数据长度-1
             const gapData = new Array(historyScores.length - 1).fill(null);
@@ -209,7 +233,7 @@ createApp({
                     textStyle: { color: '#94a3b8', fontSize: 14, fontWeight: 'normal' }
                 },
                 grid: { top: 50, bottom: 20, left: 40, right: 20, containLabel: true },
-                tooltip: { 
+                tooltip: {
                     trigger: 'axis',
                     formatter: function (params) {
                         let result = params[0].name + '<br/>';
@@ -278,8 +302,8 @@ createApp({
                         symbol: 'emptyCircle',
                         symbolSize: 6,
                         itemStyle: { color: '#f43f5e' }, // 玫瑰红，表示预测/风险
-                        lineStyle: { 
-                            width: 3, 
+                        lineStyle: {
+                            width: 3,
                             type: 'dashed' // 关键：虚线
                         },
                         label: {
@@ -413,9 +437,11 @@ createApp({
             mdParser,
             getScoreColor,
             reportRef,
-            toastMsg,  
+            toastMsg,
             exportPdf,
-            hotLoading,  
+            loadingProgress,
+            loadingMsg,
+            hotLoading,
             fetchHotTopics
         };
     }

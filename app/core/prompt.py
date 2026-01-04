@@ -1,6 +1,21 @@
-def sentiment_prompt(topic: str, context: str) -> str:
+def sentiment_intro_prompt(topic: str, context: str) -> str:
     return f"""
-    你是一个高级舆情分析专家。请根据以下互联网搜索结果，对话题“{topic}”进行深度分析以及对未来可能发展的态势进行预测和感知。
+    你是一个资深的舆情分析专家。请根据以下搜索结果，对话题“{topic}”撰写一篇详细的【事件概述与背景分析】。
+    
+    搜索结果上下文：
+    {context}
+
+    要求：
+    1. 使用Markdown格式。
+    2. 深度剖析事件起因、核心当事人、以及初步的社会反响。
+    3. 内容要详细、客观，专业性强。
+    4. 字数控制在400字左右。
+    5. 使用合适的emoji装饰标题。
+    """
+
+def sentiment_data_prompt(topic: str, context: str) -> str:
+    return f"""
+    你是一个高级舆情分析专家。请根据以下互联网搜索结果，对话题“{topic}”进行【数据驱动的深度分析】。
     
     搜索结果上下文：
     {context}
@@ -11,18 +26,14 @@ def sentiment_prompt(topic: str, context: str) -> str:
         "sentiment_score": 0-100的整数 (0为极度负面，50中立，100极度正面),
         "sentiment_label": "正面/负面/中立/争议",
         "keywords": ["关键词1", "关键词2", "关键词3", "关键词4", "关键词5"],
-        // --- 核心修改：将数据分为历史和预测 ---
         "trend_data": [
             {{"date": "MM-DD", "score": 实际热度值}},
-            {{"date": "MM-DD", "score": 实际热度值}},
-            ... (最近5-7天的历史数据,请再三确认时间是否正确！不准出错！)
+            ... (最近5-7天的历史数据)
         ],
         "forecast_data": [
             {{"date": "MM-DD", "score": 预测热度值}},
-            ... (未来2-3天的预测数据，基于当前趋势推演，请确保你的推演有依据)
+            ... (未来2-3天的预测数据，基于趋势推演)
         ],
-        // ----------------------------------
-
         "sentiment_distribution": [
              {{"name": "正面", "value": 百分比数值}},
              {{"name": "中立", "value": 百分比数值}},
@@ -37,32 +48,35 @@ def sentiment_prompt(topic: str, context: str) -> str:
         ],
         "related_topics": [
             {{"name": "关联话题1", "value": 热度值}},
-            {{"name": "关联话题2", "value": 热度值}},
              ...
         ],
         "regional_distribution": [
             {{"name": "省份1", "value": 热度值}},
-            {{"name": "省份2", "value": 热度值}},
             ...
         ],
-        "report_markdown": "这里是一篇**非常详细**、结构清晰的深度分析报告（Markdown格式），字数不少于800字。请将对数据的分析融入到文章中。
+        "report_markdown": "这里是报告的核心数据分析部分。请将文字分析与以下图表占位符结合，字数约500字。
         
-        **关键要求：**
-        请在报告的合适位置插入图表占位符，系统会自动替换为可视化图表。请确保使用以下占位符，并分散在文章的不同章节中：
-        
-        - [[CHART:TREND]]  <- 插入在“热度走势”或“事件背景”相关章节
-        - [[CHART:SENTIMENT]] <- 插入在“情感分析”或“网民观点”相关章节
-        - [[CHART:SOURCE]] <- 插入在“传播渠道”或“媒体分布”相关章节
-        - [[CHART:REGION]] <- 插入在“地域分布”或“关注人群”相关章节
-        - [[CHART:TOPIC]] <- 插入在“关联话题”或“延伸讨论”相关章节
-
-        报告结构建议：
-        1. 事件概述（插入 [[CHART:TREND]]）
-        2. 舆情情感研判（插入 [[CHART:SENTIMENT]]）
-        3. 传播溯源与渠道分析（插入 [[CHART:SOURCE]]）
-        4. 受众画像与地域分布（插入 [[CHART:REGION]]）
-        5. 核心议题与关联话题（插入 [[CHART:TOPIC]]）
-        6. 研判结论与建议
+        **必须插入且仅插入一次以下占位符：**
+        - [[CHART:TREND]]
+        - [[CHART:SENTIMENT]]
+        - [[CHART:SOURCE]]
+        - [[CHART:REGION]]
+        - [[CHART:TOPIC]]
         "
     }}
+    """
+
+def sentiment_conclusion_prompt(topic: str, context: str, current_analysis: str) -> str:
+    return f"""
+    你是一个舆情研判专家。针对话题“{topic}”，基于之前的分析内容，撰写最后的【风险研判与应对建议】。
+    
+    背景参考：
+    {current_analysis[:2000]} 
+
+    要求：
+    1. 使用Markdown格式。
+    2. 预测未来走势，指出潜在风险点。
+    3. 给相关主体提供至少3条具体的应对策略。
+    4. 字数控制在300字左右。
+    5. 使用合适的emoji装饰标题。
     """
