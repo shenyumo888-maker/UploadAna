@@ -15,6 +15,16 @@ ENV/
 dist/
 build/
 
+# Python virtual environment
+venv/
+env/
+.yuqing/
+yuqing/
+
+# Python cache
+__pycache__/
+*.pyc
+
 # ===============================
 # VS Code
 # ===============================

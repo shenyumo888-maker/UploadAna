@@ -7,9 +7,7 @@ router = APIRouter()
 
 @router.get("/hot-topics")
 def get_hot_topics():
-    """
-    爬取百度实时热搜榜，获取最真实的“微博式”热点
-    """
+
     topics = []
     
     try:
@@ -18,13 +16,12 @@ def get_hot_topics():
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
         
-        print(f"正在抓取百度热搜: {url}")
         resp = requests.get(url, headers=headers, timeout=5)
         
         if resp.status_code == 200:
             soup = BeautifulSoup(resp.text, 'html.parser')
             
-            # 百度热搜的标题通常在 class 为 c-single-text-ellipsis 的元素里
+            # 热搜的标题通常在 class 为 c-single-text-ellipsis 的元素里
             # 或者是 content_wm 这种 class
             # 不同版本的百度页面结构可能微调，这里用通用的选择器
             items = soup.select('.category-wrap_iQLoo .c-single-text-ellipsis')
@@ -33,10 +30,10 @@ def get_hot_topics():
                 title = item.get_text().strip()
                 if title and title not in [t['title'] for t in topics]:
                     topics.append({"title": title})
-                    if len(topics) >= 12: break # 抓够12个就停
+                    if len(topics) >= 20: break # 抓够12个就停
 
     except Exception as e:
-        print(f"百度热搜抓取失败: {e}")
+        print(f"热搜抓取失败: {e}")
 
     if not topics:
         print("使用兜底数据")

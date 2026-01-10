@@ -64,25 +64,69 @@
             <p class="text-slate-400">西藏大学-上海大学多媒体与人工智能安全研究小组</p>
         </header>
 
-        <!-- 输入区域 -->
-        <div class="max-w-2xl mx-auto mb-12 glass rounded-2xl p-2 flex shadow-2xl shadow-indigo-500/20" gap-3>
-            <input v-model="topic" @keyup.enter="analyze" type="text" placeholder="输入话题，例如：'小米SU7发布会'"
-                class="flex-1 bg-transparent border-none outline-none text-white px-4 text-lg placeholder-slate-500">
-            <!-- 生成报告 -->
+        <!-- 输入区域容器 -->
+        <!-- 修改点1：gap-3 移到了 class 里面 -->
+        <!-- 修改点2：添加 items-center 保证垂直居中 -->
+        <div class="max-w-2xl mx-auto mb-12 glass rounded-2xl p-2 flex items-center shadow-2xl shadow-indigo-500/20 gap-3">
+
+            <!-- 文本输入框 -->
+            <!-- 修改点3：添加 min-w-0 防止在小屏幕下 input 撑破布局 -->
+            <input v-model="topic" @keyup.enter="analyze" type="text" placeholder="输入关键字，例如：'蔡国强烟花事件'"
+                class="flex-1 min-w-0 bg-transparent border-none outline-none text-white px-4 text-lg placeholder-slate-500">
+
+            <!-- 上传区域 (包含上传按钮 和 预览图) -->
+            <!-- 修改点4：核心逻辑！只有在 非加载状态 且 没有结果 时才显示 -->
+            <div v-if="!loading && !result" class="flex-shrink-0 flex items-center">
+                
+                <!-- 情况A：没传视频，显示上传按钮 -->
+                <!-- 修改点5：添加 whitespace-nowrap 防止按钮文字换行 -->
+                <!-- <label v-if="!videoUploaded" 
+                    class="bg-indigo-600/80 hover:bg-indigo-600 text-white px-4 py-3 rounded-xl font-medium cursor-pointer transition hover:-translate-y-0.5 whitespace-nowrap">
+                    上传视频
+                    <input type="file" accept="video/*" class="hidden" @change="handleVideoUpload">
+                </label> -->
+
+                <!-- 情况B：已传视频，显示预览图或文字 -->
+                <div v-else class="flex items-center mr-2">
+                    <!-- 有缩略图显示图 -->
+                    <div v-if="thumbnailUrl" class="relative group h-10 w-16">
+                        <img :src="thumbnailUrl" class="h-full w-full object-cover rounded-lg border border-indigo-500/50">
+                        <!--甚至可以加个小叉号用来删除视频-->
+                        <div class="absolute inset-0 bg-black/50 flex items-center justify-center rounded-lg">
+                        <span class="text-[10px] text-white">已选</span>
+                        </div>
+                    </div>
+                    <!-- 没缩略图显示文字 -->
+                    <div v-else class="text-indigo-300 text-sm font-medium whitespace-nowrap">
+                        
+                    </div>
+                    
+                    <!-- (可选)如果你想允许重新上传，这里可以放个小重置按钮 -->
+                </div>
+            </div>
+
+            <!-- 生成报告按钮 -->
+            <!-- 修改点6：添加 flex-shrink-0 防止按钮被挤扁 -->
             <button @click="analyze" :disabled="loading"
-                class="bg-indigo-600 text-white px-8 py-3 rounded-xl font-medium flex items-center justify-center transition hover:-translate-1 hover:scale-105">
-                <span v-if="!loading">生成报告</span>
-                <div v-else class="loader"></div>
+                class="flex-shrink-0 bg-indigo-600 text-white px-6 py-3 rounded-xl font-medium flex items-center justify-center transition hover:-translate-1 hover:scale-105 whitespace-nowrap">
+                <span v-if="!loading">舆情分析</span>
+                <!-- Loading 动画 -->
+                <div v-else class="flex items-center gap-2">
+                    <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>分析中...</span>
+                </div>
             </button>
 
+            <!-- 导出 PDF 按钮 -->
             <button v-if="result" @click="exportPdf"
-                class="border ml-2 border-indigo-600 text-indigo-600 px-6 py-3 rounded-xl font-medium hover:bg-indigo-50 transition hover:-translate-1 hover:scale-105">
+                class="flex-shrink-0 border ml-0 border-indigo-600 text-indigo-600 px-6 py-3 rounded-xl font-medium hover:bg-indigo-50 transition hover:-translate-1 hover:scale-105 whitespace-nowrap">
                 导出 PDF
             </button>
+
         </div>
 
         <!-- 加载状态 (Progress Bar) -->
-        <div v-if="loading" class="max-w-2xl mx-auto mt-20 mb-20 text-center animate-pulse">
+        <div v-if="loading" class="max-w-2xl mx-auto mt-20 mb-20 text-center">
             <div class="mb-8">
                 <div class="loader-lg mx-auto mb-6"></div>
                 <h3 class="text-2xl font-bold text-white mb-2">{{ loadingMsg }}</h3>

@@ -11,6 +11,9 @@ createApp({
         const reportRef = ref(null);
         const hotLoading = ref(false);
         const toastMsg = ref('');//提示框消息文字
+        const videoFile = ref(null);       // 保存视频文件对象
+        const videoPreview = ref('');      // 输入框显示视频名
+        const videoUploaded = ref(false);  // 控制上传按钮显示/隐藏
 
         onMounted(() => {
             fetchHotTopics();
@@ -29,7 +32,7 @@ createApp({
 
         // 从后端python中抓取result
         const analyze = async () => {
-            if (!topic.value) return;
+            if (!topic.value && !videoFile.value && !videoPreview.value) return; // topic 或视频至少要有一个
             loading.value = true;
             result.value = null;
             loadingProgress.value = 0;
@@ -38,7 +41,6 @@ createApp({
             // 模拟进度条增长
             const timer = setInterval(() => {
                 if (loadingProgress.value < 98) {
-                    // 随着进度增加，增长速度稍微变慢，但保持合理的步长
                     const remaining = 100 - loadingProgress.value;
                     loadingProgress.value += Math.random() * (remaining / 12);
 
@@ -53,22 +55,45 @@ createApp({
             }, 800);
 
             try {
-                const res = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ topic: topic.value })
-                });
-                const data = await res.json();
+                let data;
+                // 如果是视频分析
+                if (videoUploaded.value || videoPreview.value) {
+                    // 视频已经上传，直接调用 analyze 接口
+                    const res = await fetch('/api/video/analyze', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            filename: videoPreview.value, // 这里 videoPreview 存的是 filename
+                            topic: topic.value
+                        })
+                    });
+                    const json = await res.json();
+                    data = json.analysis ? JSON.parse(json.analysis) : json; // 兼容返回格式
+                } else {
+                    // 普通话题分析
+                    const formData = new FormData();
+                    formData.append('topic', topic.value);
+                    const res = await fetch('/api/analyze', {
+                        method: 'POST',
+                        body: formData
+                    });
+                    data = await res.json();
+                }
 
                 clearInterval(timer);
                 loadingProgress.value = 100;
                 loadingMsg.value = '分析完成！正在同步报告内容...';
 
-                await new Promise(r => setTimeout(r, 600)); // 停顿一下让用户看清完成状态
+                await new Promise(r => setTimeout(r, 600));
 
                 result.value = data;
                 await nextTick();
                 initCharts(data);
+
+                // 分析完成后清理状态（可选，保留也不错）
+                // videoUploaded.value = false;
 
             } catch (e) {
                 clearInterval(timer);
@@ -76,6 +101,45 @@ createApp({
                 alert('分析失败，请检查后端日志');
             } finally {
                 loading.value = false;
+            }
+        };
+
+        const thumbnailUrl = ref(''); // 新增：缩略图URL
+
+        const handleVideoUpload = async (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            videoFile.value = file;
+            showToast(`正在上传: ${file.name}...`);
+
+            // 立即上传
+            const formData = new FormData();
+            formData.append('file', file);
+
+            try {
+                const res = await fetch('/api/video/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+
+                if (data.status === 'success') {
+                    videoPreview.value = data.filename; // 保存文件名
+                    videoUploaded.value = true;
+                    showToast('上传成功！');
+
+                    if (data.thumbnail_url) {
+                        thumbnailUrl.value = data.thumbnail_url;
+                    } else {
+                        thumbnailUrl.value = '';
+                    }
+                } else {
+                    showToast('上传失败: ' + data.message);
+                }
+            } catch (e) {
+                console.error(e);
+                showToast('上传出错');
             }
         };
 
@@ -454,7 +518,8 @@ createApp({
             loadingProgress,
             loadingMsg,
             hotLoading,
-            fetchHotTopics
+            fetchHotTopics,
+            thumbnailUrl
         };
     }
 }).mount('#app');

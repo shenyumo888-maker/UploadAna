@@ -6,3 +6,5 @@ pydantic
 python-dotenv
 requests
 beautifulsoup4
+python-multipart
+opencv-python
