@@ -1,0 +1,459 @@
+<!-- HTML 只保留 DOM + Tailwind 样式 -->
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<!-- class="dark"：Tailwind 的 暗黑模式开关 只要加了 dark，就能用 dark: 前缀控制深色样式 -->
+
+<!-- <head>：加载“外部工具”和配置 -->
+
+<head>
+    <!-- meta：元数据：意为描述数据的数据 有很多不同种类的 <meta> 元素可以被包含进你的页面的 <head> 元素 -->
+    <meta charset="UTF-8">
+    <!-- viewport作用：让网页在手机端也能显示正常 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <!-- name 指定了 meta 元素的类型；说明该元素包含了什么类型的信息。content 指定了实际的元数据内容。 -->
+
+    <title>AI 舆情分析系统</title>
+
+    <!-- <script> 元素也应当放在文档的头部，并包含 src 属性来指向需要加载的 JavaScript 文件路径，同时最好加上 defer 以告诉浏览器在解析完成 HTML 后再加载 JavaScript。-->
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+
+    <!-- ECharts -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <!-- ECharts WordCloud -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts-wordcloud@2.1.0/dist/echarts-wordcloud.min.js"></script>
+
+    <!-- Markdown Parser -->
+    <script src="https://cdn.jsdelivr.net/npm/markdown-it@13.0.2/dist/markdown-it.min.js"></script>
+
+    <!-- html2canvas -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+    <!-- jsPDF -->
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+    <!-- 自定义样式 -->
+    <link rel="stylesheet" href="/static/style.css">
+    
+    <style>
+        /* 简单的滚动条样式 */
+
+        .scrollbar-hide::-webkit-scrollbar {
+            display: none;
+        }
+        .scrollbar-hide {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        [v-cloak] { display: none; }
+    </style>
+</head>
+
+
+<body class="min-h-screen p-6 relative">
+    <div id="app" class="max-w-6xl mx-auto" v-cloak>
+
+        <!-- ================= 历史记录侧边栏 ================= -->
+        <!-- 悬浮开关按钮 -->
+        <button @click="showHistory = !showHistory" 
+            class="fixed top-6 right-6 z-40 bg-slate-800/80 hover:bg-indigo-600 text-white p-3 rounded-full shadow-lg backdrop-blur transition-all duration-300 border border-slate-700 hover:rotate-90">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+        </button>
+
+        <!-- 侧边栏抽屉 -->
+        <div class="fixed inset-y-0 right-0 w-80 bg-slate-900/95 backdrop-blur-xl shadow-2xl z-50 transform transition-transform duration-300 ease-in-out border-l border-slate-700/50 flex flex-col"
+            :class="showHistory ? 'translate-x-0' : 'translate-x-full'">
+            
+            <!-- 标题栏 -->
+            <div class="p-5 border-b border-slate-700/50 flex items-center justify-between">
+                <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-indigo-400">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+                    </svg>
+                    历史记录
+                </h2>
+                <button @click="showHistory = false" class="text-slate-400 hover:text-white transition-colors">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+
+            <!-- 列表区域 -->
+            <div class="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-hide">
+                <div v-if="historyList.length === 0" class="text-center text-slate-500 py-10">
+                    暂无历史记录
+                </div>
+                
+                <div v-for="item in historyList" :key="item.id" 
+                    class="group relative bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl p-3 transition-all cursor-pointer"
+                    @click="loadHistory(item.id)">
+                    
+                    <div class="flex justify-between items-start mb-1">
+                        <h3 class="text-sm font-medium text-slate-200 line-clamp-2 group-hover:text-indigo-300 transition-colors">{{ item.topic }}</h3>
+                        <!-- 删除按钮 -->
+                        <button @click.stop="deleteHistory(item.id)" class="opacity-0 group-hover:opacity-100 text-slate-500 hover:text-rose-400 p-1 transition-all">
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-4 h-4">
+                                <path stroke-linecap="round" stroke-linejoin="round" d="m14.74 9-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 0 1-2.244 2.077H8.084a2.25 2.25 0 0 1-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 0 0-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 0 1 3.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 0 0-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 0 0-7.5 0" />
+                            </svg>
+                        </button>
+                    </div>
+                    
+                    <div class="flex items-center justify-between text-xs text-slate-500">
+                        <span>{{ new Date(item.created_at).toLocaleDateString() }}</span>
+                        <span :class="getScoreColor(item.sentiment_score)">{{ item.sentiment_score }}分</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ================= 轻提示 Toast ================= -->
+        <!-- transition-all: 让出现和消失有淡入淡出动画 -->
+        <div v-if="toastMsg"
+            class="fixed top-10 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 px-6 py-3 bg-slate-800/90 border border-white-500/50 text-white-100 rounded-[2vw] shadow-2xl backdrop-blur-md animate-fade-in-down transition-all duration-500">
+            <!-- 小图标 -->
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                stroke="currentColor" class="w-5 h-5 text-indigo-400">
+                <path stroke-linecap="round" stroke-linejoin="round"
+                    d="M9 12.75 11.25 15 15 9.75M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" />
+            </svg>
+            <!-- 文字 -->
+            <span class="font-medium text-sm">{{ toastMsg }}</span>
+        </div>
+
+        <!-- Header -->
+        <header class="mb-10 text-center">
+            <h1
+                class="text-4xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-cyan-400 mb-2">
+                自媒体网络舆情事件分析系统
+            </h1>
+            <p class="text-slate-400">西藏大学-上海大学多媒体与人工智能安全研究小组</p>
+        </header>
+
+        <!-- 输入区域容器 -->
+        <!-- 修改点1：gap-3 移到了 class 里面 -->
+        <!-- 修改点2：添加 items-center 保证垂直居中 -->
+        <div class="max-w-2xl mx-auto mb-6 glass rounded-2xl p-2 flex items-center shadow-2xl shadow-indigo-500/20 gap-3 relative">
+
+            <!-- 文本输入框 -->
+            <!-- 修改点3：添加 min-w-0 防止在小屏幕下 input 撑破布局 -->
+            <input v-model="topic" @keyup.enter="analyze" type="text" placeholder="输入关键字，例如：'蔡国强烟花事件'"
+                class="flex-1 min-w-0 bg-transparent border-none outline-none text-white px-4 text-lg placeholder-slate-500">
+
+            <!-- 生成报告按钮 -->
+            <!-- 修改点6：添加 flex-shrink-0 防止按钮被挤扁 -->
+            <button @click="analyze" :disabled="loading"
+                class="flex-shrink-0 bg-indigo-600 text-white px-6 py-3 rounded-xl font-medium flex items-center justify-center transition hover:-translate-1 hover:scale-105 whitespace-nowrap">
+                <span v-if="!loading">舆情分析</span>
+                <!-- Loading 动画 -->
+                <div v-else class="flex items-center gap-2">
+                    <div class="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                    <span>分析中...</span>
+                </div>
+            </button>
+
+            <!-- 导出 PDF 按钮 -->
+            <button v-if="result" @click="exportPdf"
+                class="flex-shrink-0 border ml-0 border-indigo-600 text-indigo-600 px-6 py-3 rounded-xl font-medium hover:bg-indigo-50 transition hover:-translate-1 hover:scale-105 whitespace-nowrap">
+                导出 PDF
+            </button>
+
+        </div>
+        
+        <!-- 文件上传区域 (新) -->
+        <div class="max-w-2xl mx-auto mb-12">
+             <div 
+                class="relative border-2 border-dashed border-slate-600 rounded-xl p-4 transition-all duration-300 hover:border-indigo-500 bg-slate-800/30 group"
+                @dragover.prevent="dragOver = true"
+                @dragleave.prevent="dragOver = false"
+                @drop.prevent="handleDrop"
+                :class="{ 'border-indigo-500 bg-indigo-500/10': dragOver }">
+                
+                <input type="file" ref="fileInput" class="hidden" 
+                    accept=".mp4,.mov,.avi,.jpg,.jpeg,.png,.webp"
+                    @change="handleFileSelect">
+
+                <!-- 未上传状态 -->
+                <div v-if="!uploadFile" class="flex flex-col items-center justify-center py-2 cursor-pointer" @click="$refs.fileInput.click()">
+                    <div class="flex items-center gap-3 text-slate-400 group-hover:text-indigo-400 transition-colors">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-8 h-8">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                        </svg>
+                        <div class="text-sm">
+                            <span class="font-bold">点击或拖拽</span> 上传图片/视频
+                            <span class="text-xs block opacity-70 mt-1">支持 MP4, MOV, JPG, PNG (视频<200MB, 图片<20MB)</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 已选择/上传中状态 -->
+                <div v-else class="flex items-center gap-4">
+                    <!-- 文件图标 -->
+                    <div class="h-12 w-12 rounded-lg bg-indigo-900/50 flex items-center justify-center text-indigo-400">
+                        <svg v-if="isVideo(uploadFile.name)" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m15.75 10.5 4.72-4.72a.75.75 0 0 1 1.28.53v11.38a.75.75 0 0 1-1.28.53l-4.72-4.72M4.5 18.75h9a2.25 2.25 0 0 0 2.25-2.25v-9a2.25 2.25 0 0 0-2.25-2.25h-9A2.25 2.25 0 0 0 2.25 7.5v9a2.25 2.25 0 0 0 2.25 2.25Z" />
+                        </svg>
+                        <svg v-else xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 0 0 1.5-1.5V6a1.5 1.5 0 0 0-1.5-1.5H3.75A1.5 1.5 0 0 0 2.25 6v12a1.5 1.5 0 0 0 1.5 1.5Zm10.5-11.25h.008v.008h-.008V8.25Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z" />
+                        </svg>
+                    </div>
+
+                    <div class="flex-1 min-w-0">
+                        <div class="flex justify-between mb-1">
+                            <span class="text-sm font-medium text-slate-200 truncate">{{ uploadFile.name }}</span>
+                            <button @click.stop="removeFile" class="text-slate-500 hover:text-rose-400">
+                                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+                                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18 18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <!-- 进度条 -->
+                        <div class="w-full bg-slate-700/50 rounded-full h-1.5 overflow-hidden">
+                            <div class="bg-indigo-500 h-full transition-all duration-300" 
+                                :style="{ width: uploadProgress + '%' }"></div>
+                        </div>
+                        <div class="flex justify-between text-[10px] text-slate-500 mt-1">
+                            <span>{{ formatSize(uploadFile.size) }}</span>
+                            <span v-if="uploadStatus === 'uploading'">上传中 {{ uploadProgress }}%</span>
+                            <span v-else-if="uploadStatus === 'processing'" class="text-indigo-400 animate-pulse">AI 视觉分析中...</span>
+                            <span v-else-if="uploadStatus === 'completed'" class="text-emerald-400">分析完成</span>
+                            <span v-else-if="uploadStatus === 'error'" class="text-rose-400">失败</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 加载状态 (Progress Bar) -->
+        <div v-if="loading" class="max-w-2xl mx-auto mt-20 mb-20 text-center">
+            <div class="mb-8">
+                <div class="loader-lg mx-auto mb-6"></div>
+                <h3 class="text-2xl font-bold text-white mb-2">{{ loadingMsg }}</h3>
+                <p class="text-slate-400 text-sm">专家系统正在交叉验证多源舆情数据，请耐心等待...</p>
+            </div>
+            <!-- 进度条背景 -->
+            <div class="w-full bg-slate-800/50 rounded-full h-2.5 mb-4 overflow-hidden border border-slate-700">
+                <!-- 进度条内容 -->
+                <div class="bg-gradient-to-r from-indigo-600 via-purple-500 to-cyan-400 h-full transition-all duration-700 ease-in-out shadow-[0_0_15px_rgba(99,102,241,0.5)]"
+                    :style="{ width: loadingProgress + '%' }"></div>
+            </div>
+            <div class="flex justify-between text-[10px] text-slate-500 font-mono uppercase tracking-tighter px-1">
+                <span :class="{'text-indigo-400 font-bold': loadingProgress >= 0}">Step 1: Background</span>
+                <span :class="{'text-indigo-400 font-bold': loadingProgress > 30}">Step 2: Data & Charts</span>
+                <span :class="{'text-indigo-400 font-bold': loadingProgress > 65}">Step 3: Strategic Conclusions</span>
+            </div>
+        </div>
+
+
+        <!-- 热点推荐区域 (当没有生成报告且没有正在加载时显示) -->
+        <div v-if="!result && !loading" class="max-w-4xl mx-auto mt-12 animate-fade-in-up">
+
+            <!-- 标题 -->
+            <div class="flex items-center gap-2 mb-6 px-2">
+                <span class="text-2xl">🔥</span>
+                <h3 class="text-xl font-bold text-white tracking-wide">实时舆情热搜</h3>
+                <button @click="fetchHotTopics" :disabled="hotLoading"
+                    class="ml-auto group flex items-center gap-1.5 text-xs text-slate-400 border border-slate-700 hover:border-indigo-500 hover:text-indigo-300 hover:bg-slate-800 px-3 py-1.5 rounded-lg transition-all hover:scale-105 cursor-pointer">
+                    <!-- 图标：根据 loading 状态决定是否旋转 -->
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2"
+                        stroke="currentColor" class="w-3.5 h-3.5" :class="{ 'animate-spin': hotLoading }">
+                        <path stroke-linecap="round" stroke-linejoin="round"
+                            d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0 3.181 3.183a8.25 8.25 0 0 0 13.803-3.7M4.031 9.865a8.25 8.25 0 0 1 13.803-3.7l3.181 3.182m0-4.991v4.99" />
+                    </svg>
+
+                    <!-- 文字：根据状态变化 -->
+                    <span>{{ hotLoading ? '更新中...' : '刷新榜单' }}</span>
+                </button>
+            </div>
+
+            <!-- 列表容器 -->
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                <!-- 循环渲染热点 -->
+                <div v-for="(item, index) in hotTopics" :key="index" @click="applyHotTopic(item.title)"
+                    class="group relative glass hover:bg-slate-700/50 transition-all duration-300 cursor-pointer rounded-xl p-4 flex items-center gap-4 border border-slate-700/50 hover:border-indigo-500/50 hover:-translate-y-1">
+                    <!-- 排名数字：前三名特殊颜色 -->
+                    <div class="text-xl font-black italic w-8 text-center" :class="{
+                            'text-red-500': index === 0,
+                            'text-orange-500': index === 1,
+                            'text-yellow-500': index === 2,
+                            'text-slate-500': index > 2
+                        }">
+                        {{ index + 1 }}
+                    </div>
+
+                    <!-- 内容 -->
+                    <div class="flex-1 min-w-0"> <!-- min-w-0 用于让 truncate 生效 -->
+                        <div class="text-slate-200 font-medium truncate group-hover:text-indigo-300 transition-colors">
+                            {{ item.title }}
+                        </div>
+                        <!-- 装饰性的小标签 -->
+                        <div class="text-xs text-slate-500 mt-1 flex items-center gap-2">
+                            <span v-if="index < 3"
+                                class="bg-red-500/20 text-red-400 px-1.5 rounded text-[10px]">HOT</span>
+                            <span v-else class="bg-slate-700 text-slate-400 px-1.5 rounded text-[10px]">NEW</span>
+                            <span class="opacity-0 group-hover:opacity-100 transition-opacity text-indigo-400">点击分析
+                                &rarr;</span>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- Dashboard -->
+        <div v-if="result" class="space-y-6 animate-fade-in-up" ref="reportRef">
+
+            <!-- 第一行：核心指标 -->
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <!-- 舆情健康度 -->
+                <div class="glass rounded-2xl p-6 text-center relative overflow-hidden flex flex-col justify-center">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-2">舆情健康度</div>
+                    <div class="flex items-center justify-center gap-2">
+                        <span class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br drop-shadow-sm"
+                            :class="{
+                                'from-emerald-400 to-cyan-500': result.sentiment_score >= 70,
+                                'from-yellow-400 to-orange-500': result.sentiment_score >= 40 && result.sentiment_score < 70,
+                                'from-rose-400 to-red-600': result.sentiment_score < 40
+                            }">
+                            {{ result.sentiment_score }}
+                        </span>
+                        <span v-if="result.sentiment_score >= 70" class="text-4xl animate-bounce filter drop-shadow-lg" title="健康">🛡️</span>
+                        <span v-else-if="result.sentiment_score >= 40" class="text-4xl animate-pulse filter drop-shadow-lg" title="预警">⚠️</span>
+                        <span v-else class="text-4xl animate-pulse filter drop-shadow-lg" title="危险">🆘</span>
+                    </div>
+                    <div class="text-lg mt-1 font-medium text-white">{{ result.sentiment_label }}</div>
+                </div>
+
+                <!-- 热度指数 -->
+                <div class="glass rounded-2xl p-6 text-center relative overflow-hidden flex flex-col justify-center">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-2">热度指数</div>
+                    <div class="flex items-center justify-center gap-2">
+                        <span class="text-6xl font-black text-transparent bg-clip-text bg-gradient-to-br from-orange-400 to-red-600 drop-shadow-sm">
+                            {{ result.popularity_score || '-' }}
+                        </span>
+                        <span v-if="result.popularity_score" class="text-4xl animate-pulse filter drop-shadow-lg transform hover:scale-110 transition-transform">🔥</span>
+                    </div>
+                    <div class="text-lg mt-1 font-medium text-white">
+                        <span v-if="!result.popularity_score">计算中...</span>
+                        <span v-else-if="result.popularity_score >= 80">全民热议</span>
+                        <span v-else-if="result.popularity_score >= 50">高度关注</span>
+                        <span v-else>一般关注</span>
+                    </div>
+                </div>
+
+                <!-- 关键词云 -->
+                <div class="md:col-span-2 glass rounded-2xl p-6">
+                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-4">舆论关键词</div>
+                    <div class="flex flex-wrap gap-2">
+                        <span v-for="word in result.keywords"
+                            class="px-3 py-1 bg-slate-700/50 rounded-full text-sm text-indigo-300 border border-indigo-500/30">
+                            #{{ word }}
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 动态报告流 -->
+            <div class="glass rounded-2xl p-8 min-h-[500px]">
+                <div class="flex items-center justify-between mb-6 border-b border-slate-700 pb-4">
+                    <h2 class="text-2xl font-bold text-white">深度分析报告</h2>
+                    <span class="text-xs text-slate-300 px-2 py-1 rounded" v-if="result.multimodal">multimodal: true</span>
+                    <span class="text-xs text-slate-300 px-2 py-1 rounded">AI生成 仅供参考</span>
+                </div>
+
+                <div class="space-y-8 text-slate-300">
+                    <template v-for="(segment, idx) in reportSegments" :key="idx">
+
+                        <!-- 文本段落 -->
+                        <div v-if="segment.type === 'text'" class="markdown-body"
+                            v-html="mdParser.render(segment.content)">
+                        </div>
+
+                        <!-- 图表插入：热度趋势 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'TREND'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">热度趋势分析
+                                </div>
+                                <div id="trendChart" class="w-full" style="height: 400px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：情感分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'SENTIMENT'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">用户情感分布
+                                </div>
+                                <div id="sentimentChart" class="w-full" style="height: 400px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：来源分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'SOURCE'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">媒体来源构成
+                                </div>
+                                <div id="sourceChart" class="w-full" style="height: 400px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：地域分布 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'REGION'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">地域关注度 Top
+                                    10</div>
+                                <div id="regionChart" class="w-full" style="height: 400px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：关联话题 -->
+                        <div v-if="segment.type === 'chart' && segment.chartType === 'TOPIC'" class="my-8">
+                            <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">核心关联话题
+                                </div>
+                                <div id="topicChart" class="w-full" style="height: 400px;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 图表插入：视觉舆情 (WordCloud or Pie) -->
+                         <div v-if="segment.type === 'chart' && segment.chartType === 'VISUAL'" class="my-8">
+                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">视觉实体词云</div>
+                                    <div id="visualWordCloud" class="w-full" style="height: 300px;"></div>
+                                </div>
+                                <div class="glass bg-slate-800/50 rounded-xl p-4 border border-indigo-500/30">
+                                    <div class="text-slate-400 text-sm uppercase tracking-wider mb-2 text-center">视觉情绪占比</div>
+                                    <div id="visualEmotionPie" class="w-full" style="height: 300px;"></div>
+                                </div>
+                             </div>
+                        </div>
+
+                    </template>
+                </div>
+            </div>
+
+
+        </div>
+
+        <!-- Chat Panel -->
+        <chat-panel 
+            v-if="result && result.id" 
+            :report-id="result.id" 
+            :report-data="result">
+        </chat-panel>
+    </div>
+
+    <!-- Vue 逻辑 -->
+    <script src="/static/chat.js"></script>
+    <script src="/static/app.js"></script>
+</body>
+
+</html>

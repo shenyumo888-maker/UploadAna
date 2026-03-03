@@ -1,0 +1,29 @@
+project/
+├── app/
+│   ├── main.py              # FastAPI 启动入口
+│   │
+│   ├── core/
+│   │   ├── config.py        # 配置 & 环境变量
+│   │   ├── llm.py           # 大模型封装
+│   │   ├── search.py        # 搜索工具封装
+│   │   └── prompt.py        # Prompt 模板
+│   │
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   └── sentiment_agent.py   # 舆情分析 Agent
+│   │
+│   ├── api/
+│   │   ├── __init__.py
+│   │   └── sentiment.py     # /api/analyze 路由
+│   │
+│   ├── models/
+│   │   └── schemas.py       # Pydantic 数据模型
+│   │
+│   ├── frontend/
+│   │   └── index.html       # 前端页面（或以后独立）
+│   │
+│   └── utils/
+│       └── logger.py
+│
+├── requirements.txt
+└── run.py                   # uvicorn 启动

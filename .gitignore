@@ -1,0 +1,69 @@
+# ===============================
+# Python
+# ===============================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.pyc
+*.env
+*.venv/
+env/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+
+# Python virtual environment
+venv/
+env/
+.yuqing/
+yuqing/
+/yuqing/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# ===============================
+# VS Code
+# ===============================
+.vscode/
+*.code-workspace
+
+# ===============================
+# macOS
+# ===============================
+.DS_Store
+
+# ===============================
+# Logs
+# ===============================
+*.log
+logs/
+*.sqlite3
+
+# ===============================
+# FastAPI / Uvicorn
+# ===============================
+*.db
+*.sqlite
+*.pid
+
+# ===============================
+# Node / Frontend
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-error.log*
+*.local
+
+# ===============================
+# Others
+# ===============================
+*.swp
+*.swo
+.idea/
+*.bak
+*.tmp
