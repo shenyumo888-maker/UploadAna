@@ -77,7 +77,11 @@ def analyze_sentiment_stream_generator(topic: str):
         yield {"event": "detail", "data": conclusion_content}
 
     # Final Assembly
-    full_report = f"{intro_content}\n\n{result.get('report_markdown', '')}\n\n{conclusion_content}"
+    result['intro_markdown'] = intro_content
+    result['data_markdown'] = result.get('report_markdown', '')
+    result['conclusion_markdown'] = conclusion_content
+    
+    full_report = f"{intro_content}\n\n{result['data_markdown']}\n\n{conclusion_content}"
     result['report_markdown'] = full_report
     yield {"event": "done", "data": result}
 
@@ -131,6 +135,10 @@ def analyze_sentiment(topic: str) -> dict:
 
     # 组合最终报告
     report_body = result.get('report_markdown', '')
+    result['intro_markdown'] = intro_content
+    result['data_markdown'] = report_body
+    result['conclusion_markdown'] = conclusion_content
+    
     full_report = f"{intro_content}\n\n{report_body}\n\n{conclusion_content}"
     result['report_markdown'] = full_report
 
