@@ -25,6 +25,40 @@ const app = createApp({
         const historyList = ref([]);
         const showHistory = ref(false);
 
+        // === 新增版块状态 ===
+        const reportMode = ref(false);
+        const activeTab = ref('overview');
+        const sectionStatus = ref({
+            background: 'idle',
+            analysis: 'idle',
+            conclusion: 'idle'
+        });
+        const sectionProgress = ref({
+            background: 0,
+            analysis: 0,
+            conclusion: 0
+        });
+
+        const closeReport = () => {
+            reportMode.value = false;
+            // 如果需要回首页后能看到热搜，且不保留当前结果，可以清空
+            // 但如果用户想之后再点历史记录回来，不清空也行。
+            // 根据需求“生成完再返回就没热搜了”，我们需要确保 homepage 状态正确。
+            result.value = null; 
+            topic.value = '';
+        };
+
+        const openReport = () => {
+            reportMode.value = true;
+            activeTab.value = 'overview';
+        };
+
+        const tabClass = (tab) => {
+            return activeTab.value === tab 
+                ? 'bg-indigo-500 text-white shadow-md shadow-indigo-500/20' 
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-700/50';
+        };
+
         const fetchHistory = async () => {
             try {
                 const res = await fetch('/api/history');
@@ -55,13 +89,23 @@ const app = createApp({
                             return;
                         }
                         
+                        if (!parsedResult.intro_markdown && !parsedResult.data_markdown) {
+                            parsedResult.data_markdown = parsedResult.report_markdown;
+                            parsedResult.intro_markdown = "> (加载自旧版历史记录，无独立溯源版块)";
+                            parsedResult.conclusion_markdown = "> (加载自旧版历史记录，无独立研判版块)";
+                        }
+                        
                         parsedResult.id = data.id;
                         result.value = parsedResult;
                         topic.value = data.topic;
+                        sectionStatus.value = { background: 'done', analysis: 'done', conclusion: 'done' };
+                        openReport();
                         
                         await nextTick();
                         setTimeout(() => {
-                            initCharts(parsedResult);
+                            if (activeTab.value === 'analysis' || activeTab.value === 'all') {
+                                initCharts(parsedResult);
+                            }
                         }, 100);
                         showToast('历史记录加载成功');
                     }
@@ -90,6 +134,23 @@ const app = createApp({
                 }
             } catch (e) {
                 showToast('删除失败');
+            }
+        };
+
+        const clearHistory = async () => {
+            if (!confirm('确定要清空所有历史记录吗？此操作不可恢复！')) return;
+            try {
+                const res = await fetch('/api/history/clear/all', { method: 'DELETE' });
+                if (res.ok) {
+                    showToast('所有历史记录已清除');
+                    fetchHistory();
+                    // 如果当前显示的正是要被清除的
+                    result.value = null;
+                    topic.value = '';
+                    reportMode.value = false;
+                }
+            } catch (e) {
+                showToast('并清空失败');
             }
         };
 
@@ -249,13 +310,8 @@ const app = createApp({
 
             const vr = visualResult.value;
             
-            // 1. 融合 ocr_text (简单的追加到 keywords 或者摘要中，这里为了展示效果，不做复杂 NLP)
-            // 实际上应该后端做，但前端演示也可以
-            
-            // 2. 重新计算分数
-            // 假设 text score 是 0-100
+            // 1. 重新计算分数
             const textScore = result.value.sentiment_score;
-            // visual emotion: positive/neutral/negative -> 100/50/0
             let visualScore = 50;
             if (vr.emotion === 'positive') visualScore = 90;
             else if (vr.emotion === 'negative') visualScore = 20;
@@ -271,22 +327,26 @@ const app = createApp({
             else if (newScore >= 40) result.value.sentiment_label = '中立 (综合)';
             else result.value.sentiment_label = '负面 (综合)';
 
-            // 3. 追加报告章节
-            let visualMd = `\n\n## 👁️ 视觉舆情分析 (Multimodal)\n\n`;
-            visualMd += `**视觉情感倾向**: ${vr.emotion} (置信度: ${vr.confidence})\n\n`;
-            visualMd += `**识别实体**: ${vr.entities ? vr.entities.join(', ') : '无'}\n\n`;
-            if (vr.ocr_text) visualMd += `**OCR 提取文本**: ${vr.ocr_text}\n\n`;
-            if (vr.summary) visualMd += `**视频摘要**: ${vr.summary}\n\n`;
-            
-            visualMd += `[[CHART: VISUAL]]\n`; // 触发图表渲染
-
-            result.value.report_markdown += visualMd;
+            // 标记为多模态
             result.value.multimodal = true;
+            result.value.visual_analysis = vr; // 存储原始视觉分析结果
+        };
 
-            // 重新初始化图表 (为了显示 Visual Charts)
-            nextTick(() => {
-                initCharts(result.value);
-            });
+        // === 进度模拟器 ===
+        const startSectionProgress = (section) => {
+            if (window[`${section}Interval`]) clearInterval(window[`${section}Interval`]);
+            sectionProgress.value[section] = 10;
+            window[`${section}Interval`] = setInterval(() => {
+                if (sectionStatus.value[section] === 'loading') {
+                    if (sectionProgress.value[section] < 90) {
+                        // 随机步进并取整
+                        const next = sectionProgress.value[section] + Math.random() * 5;
+                        sectionProgress.value[section] = Math.floor(next);
+                    }
+                } else {
+                    clearInterval(window[`${section}Interval`]);
+                }
+            }, 800);
         };
 
         // === 文本流式分析 ===
@@ -294,36 +354,60 @@ const app = createApp({
             switch (event) {
                 case 'status':
                     loadingMsg.value = data;
-                    if (data.includes('搜索')) loadingProgress.value = 10;
-                    else if (data.includes('多维')) loadingProgress.value = 20;
-                    else if (data.includes('研判')) loadingProgress.value = 80;
+                    // 先检查“分析/图表”/“多维”，再检查“搜索”，避免匹配重叠
+                    if (data.includes('研判') || data.includes('建议')) {
+                        loadingProgress.value = 80;
+                        sectionStatus.value.conclusion = 'loading';
+                        startSectionProgress('conclusion');
+                    }
+                    else if (data.includes('多维') || data.includes('图表') || data.includes('分析')) {
+                        loadingProgress.value = 45;
+                        sectionStatus.value.analysis = 'loading';
+                        startSectionProgress('analysis');
+                    }
+                    else if (data.includes('搜索')) {
+                        loadingProgress.value = 10;
+                        sectionStatus.value.background = 'loading';
+                        startSectionProgress('background');
+                    }
                     break;
                 case 'background':
-                    if (!result.value) result.value = { report_markdown: '' };
-                    if (!result.value.report_markdown) result.value.report_markdown = '';
-                    result.value.report_markdown += data;
+                    if (!result.value) result.value = {};
+                    if (!result.value.intro_markdown) result.value.intro_markdown = '';
+                    result.value.intro_markdown += data;
                     loadingProgress.value = 40;
+                    sectionStatus.value.background = 'done';
+                    sectionProgress.value.background = 100;
                     break;
                 case 'data':
-                    const background = result.value ? result.value.report_markdown : '';
-                    const middlePart = data.report_markdown || '';
+                    const intro = result.value ? result.value.intro_markdown : '';
                     result.value = { ...data };
-                    result.value.report_markdown = background + (background ? '\n\n' : '') + middlePart;
-                    loadingProgress.value = 60;
+                    result.value.intro_markdown = intro;
+                    result.value.data_markdown = data.report_markdown || '';
+                    loadingProgress.value = 75;
+                    sectionStatus.value.analysis = 'done';
+                    sectionProgress.value.analysis = 100;
                     await nextTick();
-                    initCharts(result.value);
+                    if (activeTab.value === 'analysis' || activeTab.value === 'all') {
+                        initCharts(result.value);
+                    }
                     
                     // 尝试融合视觉结果（如果已经好了）
                     if (visualResult.value) mergeVisualResult();
                     break;
                 case 'detail':
-                    if (!result.value) result.value = { report_markdown: '' };
-                    result.value.report_markdown += '\n\n' + data;
-                    loadingProgress.value = 90;
+                    if (!result.value) result.value = {};
+                    if (!result.value.conclusion_markdown) result.value.conclusion_markdown = '';
+                    result.value.conclusion_markdown += data;
+                    loadingProgress.value = 95;
+                    sectionStatus.value.conclusion = 'done';
+                    sectionProgress.value.conclusion = 100;
                     break;
                 case 'done':
                     loadingProgress.value = 100;
                     loadingMsg.value = '分析完成';
+                    sectionStatus.value = { background: 'done', analysis: 'done', conclusion: 'done' };
+                    sectionProgress.value = { background: 100, analysis: 100, conclusion: 100 };
                     loading.value = false;
                     if (data.id) {
                         if (!result.value) result.value = {};
@@ -343,9 +427,12 @@ const app = createApp({
             }
             
             loading.value = true;
-            result.value = null;
+            result.value = { report_markdown: '' };
             loadingProgress.value = 0;
             loadingMsg.value = '正在建立连接...';
+            sectionStatus.value = { background: 'idle', analysis: 'idle', conclusion: 'idle' };
+            sectionProgress.value = { background: 0, analysis: 0, conclusion: 0 };
+            openReport();
 
             // 如果有文件但还没上传，先上传
             // 这里假设用户已经操作了文件选择，自动上传已经在 startUpload 里做了
@@ -408,10 +495,10 @@ const app = createApp({
 
 
         // 解析 Markdown 并拆分为 [文字, 图表, 文字, 图表...] 的结构
-        const reportSegments = computed(() => {
-            if (!result.value || !result.value.report_markdown) return [];
+        const dataSegments = computed(() => {
+            if (!result.value || (!result.value.data_markdown && !result.value.report_markdown)) return [];
 
-            const raw = result.value.report_markdown;
+            const raw = result.value.data_markdown || result.value.report_markdown;
             const parts = raw.split(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/);
 
             const segments = [];
@@ -464,8 +551,11 @@ const app = createApp({
         };
 
         const exportPdf = async () => {
+            const tempTab = activeTab.value;
+            activeTab.value = 'all'; // 强制显示所有 Tab 供截图
             await nextTick();
-            await new Promise(r => setTimeout(r, 500));
+            initCharts(result.value);
+            await new Promise(r => setTimeout(r, 800));
 
             const scaleFactor = 0.85; 
             const canvas = await html2canvas(reportRef.value, {
@@ -496,6 +586,9 @@ const app = createApp({
             }
             
             pdf.save(`舆情分析报告_${Date.now()}.pdf`);
+            activeTab.value = tempTab; // 恢复之前的 Tab
+            await nextTick();
+            initCharts(result.value);
         };
 
         const getScoreColor = (score) => {
@@ -718,6 +811,14 @@ const app = createApp({
 
         window.addEventListener('resize', () => chartInstances.forEach(c => c.resize()));
 
+        watch(activeTab, (newVal) => {
+            if (newVal === 'analysis' || newVal === 'all') {
+                nextTick(() => {
+                    initCharts(result.value);
+                });
+            }
+        });
+
         return {
             topic,
             loading,
@@ -725,7 +826,7 @@ const app = createApp({
             analyze,
             hotTopics,
             applyHotTopic,
-            reportSegments,
+            dataSegments,
             mdParser,
             getScoreColor,
             reportRef,
@@ -733,12 +834,21 @@ const app = createApp({
             exportPdf,
             loadingProgress,
             loadingMsg,
+            clearHistory,
             hotLoading,
             fetchHotTopics,
             historyList,
             showHistory,
             loadHistory,
             deleteHistory,
+            // New Report State
+            reportMode,
+            activeTab,
+            sectionStatus,
+            closeReport,
+            openReport,
+            tabClass,
+            sectionProgress,
             // New exports
             uploadFile,
             uploadProgress,

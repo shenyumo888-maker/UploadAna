@@ -22,6 +22,15 @@ def get_history_detail(record_id: int, session: Session = Depends(get_session)):
         raise HTTPException(status_code=404, detail="Analysis record not found")
     return record
 
+@router.delete("/history/clear/all")
+def clear_all_history(session: Session = Depends(get_session)):
+    statement = select(AnalysisRecord)
+    records = session.exec(statement).all()
+    for record in records:
+        session.delete(record)
+    session.commit()
+    return {"ok": True}
+
 @router.delete("/history/{record_id}")
 def delete_history(record_id: int, session: Session = Depends(get_session)):
     record = session.get(AnalysisRecord, record_id)
