@@ -1,7 +1,6 @@
 from fastapi import APIRouter
 import requests
 from bs4 import BeautifulSoup
-import re
 
 from app.utils.logger import app_logger
 
@@ -32,7 +31,8 @@ def get_hot_topics():
                 title = item.get_text().strip()
                 if title and title not in [t['title'] for t in topics]:
                     topics.append({"title": title})
-                    if len(topics) >= 20: break # 抓够12个就停
+                    if len(topics) >= 12: 
+                        break # 抓够12个就停
 
     except Exception as e:
         app_logger.error(f"热搜抓取失败: {e}")

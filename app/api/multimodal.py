@@ -8,7 +8,6 @@ from app.core.database import get_session
 from app.models.db_models import MultimodalTask
 from app.core.queue import task_queue
 from app.services.multimodal_service import process_multimodal_task
-from typing import Optional
 
 from app.utils.logger import app_logger
 
@@ -84,7 +83,7 @@ async def upload_file(
         try:
             process_multimodal_task(file_id, abs_path)
             session.refresh(new_task)
-        except Exception as e:
+        except Exception:
             pass
 
     return {

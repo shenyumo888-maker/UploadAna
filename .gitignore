@@ -67,3 +67,5 @@ yarn-error.log*
 .idea/
 *.bak
 *.tmp
+.coverage
+app/static/uploads/

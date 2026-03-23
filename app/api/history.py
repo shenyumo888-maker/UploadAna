@@ -3,7 +3,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from app.core.database import get_session
 from app.models.db_models import AnalysisRecord
-import json
 
 router = APIRouter()
 

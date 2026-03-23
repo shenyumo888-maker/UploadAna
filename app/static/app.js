@@ -13,13 +13,8 @@ const app = createApp({
         const toastMsg = ref('');//提示框消息文字
         
         // 文件上传相关
-        const uploadFile = ref(null);
-        const uploadProgress = ref(0);
-        const uploadStatus = ref(''); // uploading, processing, completed, error
+        const uploadFiles = ref([]);
         const dragOver = ref(false);
-        const fileId = ref(null);
-        const taskId = ref(null);
-        const visualResult = ref(null);
 
         // === 历史记录相关 ===
         const historyList = ref([]);
@@ -172,49 +167,75 @@ const app = createApp({
         // === 文件处理逻辑 ===
         const handleDrop = (e) => {
             dragOver.value = false;
-            const files = e.dataTransfer.files;
-            if (files.length > 0) processFile(files[0]);
+            const files = Array.from(e.dataTransfer.files);
+            if (files.length > 0) processFiles(files);
         };
 
         const handleFileSelect = (e) => {
-            if (e.target.files.length > 0) processFile(e.target.files[0]);
+            const files = Array.from(e.target.files);
+            if (files.length > 0) processFiles(files);
         };
 
-        const processFile = (file) => {
-            // 校验格式
+        const processFiles = (files) => {
             const validExts = ['mp4', 'mov', 'avi', 'jpg', 'jpeg', 'png', 'webp'];
-            const ext = file.name.split('.').pop().toLowerCase();
-            if (!validExts.includes(ext)) {
-                showToast('不支持的文件格式');
-                return;
-            }
-
-            // 校验大小
-            const isVideo = ['mp4', 'mov', 'avi'].includes(ext);
-            const limit = isVideo ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
-            if (file.size > limit) {
-                showToast(`文件过大 (最大限制: ${isVideo ? '200MB' : '20MB'})`);
-                return;
-            }
-
-            uploadFile.value = file;
-            uploadProgress.value = 0;
-            uploadStatus.value = '';
-            visualResult.value = null; // 重置结果
             
-            // 自动开始上传
-            startUpload();
+            // 如果已有视频，不能再传；如果新加的包含视频，只能选1个视频，且不能有图片
+            let currentFiles = uploadFiles.value;
+            let newFilesToAdd = [];
+
+            for (let file of files) {
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (!validExts.includes(ext)) {
+                    showToast(`不支持的文件格式: ${file.name}`);
+                    continue;
+                }
+
+                const isVid = ['mp4', 'mov', 'avi'].includes(ext);
+                const limit = isVid ? 200 * 1024 * 1024 : 20 * 1024 * 1024;
+                if (file.size > limit) {
+                    showToast(`文件过大: ${file.name}`);
+                    continue;
+                }
+
+                if (isVid) {
+                    if (currentFiles.length > 0 || newFilesToAdd.length > 0) {
+                        showToast('视频文件只能单独上传一个');
+                        return;
+                    }
+                    newFilesToAdd.push(file);
+                    break; // 视频只能1个
+                } else {
+                    const hasVideo = currentFiles.some(f => ['mp4', 'mov', 'avi'].includes(f.file.name.split('.').pop().toLowerCase()));
+                    if (hasVideo) {
+                        showToast('已选择视频，无法再添加图片');
+                        return;
+                    }
+                    newFilesToAdd.push(file);
+                }
+            }
+
+            if (currentFiles.length + newFilesToAdd.length > 5) {
+                showToast('最多只能上传5张图片');
+                newFilesToAdd = newFilesToAdd.slice(0, 5 - currentFiles.length);
+            }
+
+            for (let file of newFilesToAdd) {
+                const fileObj = {
+                    id: Date.now() + Math.random(),
+                    file: file,
+                    progress: 0,
+                    status: 'pending', // pending, uploading, processing, completed, error
+                    fileId: null,
+                    taskId: null,
+                    visualResult: null
+                };
+                uploadFiles.value.push(fileObj);
+                startUpload(fileObj);
+            }
         };
 
-        const removeFile = () => {
-            uploadFile.value = null;
-            uploadProgress.value = 0;
-            uploadStatus.value = '';
-            fileId.value = null;
-            taskId.value = null;
-            visualResult.value = null;
-            // 如果 input 还有值，清空
-            // 注意：Vue refs 在这里可能需要处理
+        const removeFile = (index) => {
+            uploadFiles.value.splice(index, 1);
         };
 
         const formatSize = (bytes) => {
@@ -230,40 +251,37 @@ const app = createApp({
             return ['mp4', 'mov', 'avi'].includes(ext);
         };
 
-        const startUpload = () => {
-            if (!uploadFile.value) return;
-
-            uploadStatus.value = 'uploading';
+        const startUpload = (fileObj) => {
+            fileObj.status = 'uploading';
             const formData = new FormData();
-            formData.append('file', uploadFile.value);
+            formData.append('file', fileObj.file);
 
             const xhr = new XMLHttpRequest();
             
             xhr.upload.addEventListener('progress', (e) => {
                 if (e.lengthComputable) {
                     const percent = Math.round((e.loaded / e.total) * 100);
-                    uploadProgress.value = percent;
+                    fileObj.progress = percent;
                 }
             });
 
             xhr.addEventListener('load', () => {
                 if (xhr.status === 200) {
                     const res = JSON.parse(xhr.responseText);
-                    fileId.value = res.file_id;
-                    taskId.value = res.task_id;
-                    uploadStatus.value = 'processing';
+                    fileObj.fileId = res.file_id;
+                    fileObj.taskId = res.task_id;
+                    fileObj.status = 'processing';
                     showToast('文件上传成功，开始后台分析');
                     
-                    // 开始轮询任务状态
-                    pollTaskStatus();
+                    pollTaskStatus(fileObj);
                 } else {
-                    uploadStatus.value = 'error';
+                    fileObj.status = 'error';
                     showToast('上传失败');
                 }
             });
 
             xhr.addEventListener('error', () => {
-                uploadStatus.value = 'error';
+                fileObj.status = 'error';
                 showToast('网络错误');
             });
 
@@ -271,28 +289,26 @@ const app = createApp({
             xhr.send(formData);
         };
 
-        const pollTaskStatus = async () => {
-            if (!fileId.value) return;
+        const pollTaskStatus = async (fileObj) => {
+            if (!fileObj.fileId) return;
 
             const check = async () => {
                 try {
-                    const res = await fetch(`/api/multimodal/status/${fileId.value}`);
+                    const res = await fetch(`/api/multimodal/status/${fileObj.fileId}`);
                     if (res.ok) {
                         const data = await res.json();
                         if (data.status === 'completed') {
-                            uploadStatus.value = 'completed';
-                            visualResult.value = JSON.parse(data.result); // 解析内部 JSON
+                            fileObj.status = 'completed';
+                            fileObj.visualResult = JSON.parse(data.result);
                             showToast('视觉分析完成！');
                             
-                            // 如果此时已有文本分析结果，尝试融合
                             if (result.value) {
                                 mergeVisualResult();
                             }
                         } else if (data.status === 'failed') {
-                            uploadStatus.value = 'error';
+                            fileObj.status = 'error';
                             showToast(`视觉分析失败: ${data.error}`);
                         } else {
-                            // 继续轮询
                             setTimeout(check, 2000);
                         }
                     }
@@ -305,21 +321,38 @@ const app = createApp({
 
         // 融合视觉结果到主报告
         const mergeVisualResult = () => {
-            if (!result.value || !visualResult.value) return;
+            if (!result.value) return;
             if (result.value.multimodal) return; // 避免重复融合
-
-            const vr = visualResult.value;
             
-            // 1. 重新计算分数
-            const textScore = result.value.sentiment_score;
-            let visualScore = 50;
-            if (vr.emotion === 'positive') visualScore = 90;
-            else if (vr.emotion === 'negative') visualScore = 20;
-            else visualScore = 50;
+            const completedFiles = uploadFiles.value.filter(f => f.status === 'completed' && f.visualResult);
+            if (completedFiles.length === 0) return;
 
+            // 综合多个文件的情绪
+            let posCount = 0, negCount = 0, neuCount = 0;
+            let totalVisualScore = 0;
+            let allEntities = [];
+
+            completedFiles.forEach(f => {
+                const vr = f.visualResult;
+                let vs = 50;
+                if (vr.emotion === 'positive') { vs = 90; posCount++; }
+                else if (vr.emotion === 'negative') { vs = 20; negCount++; }
+                else { vs = 50; neuCount++; }
+                totalVisualScore += vs;
+                if (vr.entities) allEntities.push(...vr.entities);
+            });
+
+            const avgVisualScore = Math.round(totalVisualScore / completedFiles.length);
+            
+            // 确定综合情绪倾向
+            let overallEmotion = 'neutral';
+            if (posCount > negCount && posCount >= neuCount) overallEmotion = 'positive';
+            else if (negCount > posCount && negCount >= neuCount) overallEmotion = 'negative';
+
+            const textScore = result.value.sentiment_score;
             const alpha = 0.7; // 文本权重
             const beta = 0.3;  // 视觉权重
-            const newScore = Math.round(textScore * alpha + visualScore * beta);
+            const newScore = Math.round(textScore * alpha + avgVisualScore * beta);
             
             result.value.sentiment_score = newScore;
             // 更新 label
@@ -329,7 +362,11 @@ const app = createApp({
 
             // 标记为多模态
             result.value.multimodal = true;
-            result.value.visual_analysis = vr; // 存储原始视觉分析结果
+            result.value.visual_analysis = {
+                emotion: overallEmotion,
+                entities: [...new Set(allEntities)],
+                confidence: 0.85
+            };
         };
 
         // === 进度模拟器 ===
@@ -393,7 +430,8 @@ const app = createApp({
                     }
                     
                     // 尝试融合视觉结果（如果已经好了）
-                    if (visualResult.value) mergeVisualResult();
+                    const hasCompletedVisual = uploadFiles.value.some(f => f.status === 'completed' && f.visualResult);
+                    if (hasCompletedVisual) mergeVisualResult();
                     break;
                 case 'detail':
                     if (!result.value) result.value = {};
@@ -414,15 +452,22 @@ const app = createApp({
                         result.value.id = data.id;
                     }
                     // 再次尝试融合，确保最后也能融合
-                    if (visualResult.value) mergeVisualResult();
+                    const finalHasCompletedVisual = uploadFiles.value.some(f => f.status === 'completed' && f.visualResult);
+                    if (finalHasCompletedVisual) mergeVisualResult();
                     fetchHistory();
                     break;
             }
         };
 
         const analyze = async () => {
-            if (!topic.value && !uploadFile.value) {
+            if (!topic.value && uploadFiles.value.length === 0) {
                 showToast('请输入话题或上传文件');
+                return;
+            }
+
+            const uncompleted = uploadFiles.value.filter(f => f.status !== 'completed' && f.status !== 'error');
+            if (uncompleted.length > 0) {
+                showToast('正在等待多模态文件分析完成，请稍后...');
                 return;
             }
             
@@ -434,19 +479,41 @@ const app = createApp({
             sectionProgress.value = { background: 0, analysis: 0, conclusion: 0 };
             openReport();
 
-            // 如果有文件但还没上传，先上传
-            // 这里假设用户已经操作了文件选择，自动上传已经在 startUpload 里做了
-            // 如果用户还在选文件，可能需要等待。为了简化，我们假设用户看到"分析完成"才点按钮，或者直接点按钮
-            // 实际逻辑：如果有点话题，就跑文本分析；如果有文件，文件分析是后台跑的，前端只负责融合
-
             try {
-                // Initialize result for streaming
                 result.value = { report_markdown: '' };
-
                 const formData = new FormData();
-                // 如果有文件名，可以传给后端作为上下文
-                const contextTopic = topic.value + (uploadFile.value ? ` (包含上传文件: ${uploadFile.value.name})` : '');
-                formData.append('topic', contextTopic);
+
+                let combinedVisual = '';
+                let allEntities = [];
+                uploadFiles.value.forEach((f, index) => {
+                    if (f.visualResult) {
+                        const vr = f.visualResult;
+                        combinedVisual += `[文件${index+1}文字: ${vr.ocr_text || '无'} | 实体: ${(vr.entities || []).join(',')}] `;
+                        if (vr.summary) combinedVisual += `摘要: ${vr.summary} `;
+                        if (vr.entities) allEntities.push(...vr.entities);
+                    }
+                });
+
+                let searchTopic = topic.value;
+                if (combinedVisual) {
+                    if (!searchTopic) {
+                        // 如果没有输入文字，提取主要实体作为检索关键词
+                        const uniqueEntities = [...new Set(allEntities)].filter(e => e && e.length > 1).slice(0, 3);
+                        searchTopic = uniqueEntities.length > 0 ? uniqueEntities.join(' ') : '多模态舆情事件';
+                        topic.value = searchTopic; // 更新输入框显示
+                    } else {
+                        // 如果既有文字关键词又有多模态内容，两相综合作为主题（简单拼接核心实体增强检索）
+                        const uniqueEntities = [...new Set(allEntities)].filter(e => e && e.length > 1).slice(0, 2);
+                        if (uniqueEntities.length > 0) {
+                            searchTopic = `${topic.value} ${uniqueEntities.join(' ')}`;
+                        }
+                    }
+                }
+                
+                formData.append('topic', searchTopic);
+                if (combinedVisual) {
+                    formData.append('extra_context', combinedVisual);
+                }
                 
                 const response = await fetch('/api/analyze/stream', {
                     method: 'POST',
@@ -729,7 +796,7 @@ const app = createApp({
             const chart = echarts.init(document.getElementById('visualWordCloud'));
             chartInstances.push(chart);
             
-            const entities = visualResult.value.entities || [];
+            const entities = result.value.visual_analysis?.entities || [];
             // 简单转为词云数据，假设权重都为1，或者随机
             const data = entities.map(name => ({
                 name,
@@ -779,8 +846,8 @@ const app = createApp({
             const chart = echarts.init(document.getElementById('visualEmotionPie'));
             chartInstances.push(chart);
             
-            const em = visualResult.value.emotion; // positive, negative, neutral
-            const conf = visualResult.value.confidence || 0.8;
+            const em = result.value.visual_analysis?.emotion || 'neutral'; // positive, negative, neutral
+            const conf = result.value.visual_analysis?.confidence || 0.8;
             
             // 构造饼图数据：当前情绪 vs 其他
             const data = [];
@@ -850,9 +917,7 @@ const app = createApp({
             tabClass,
             sectionProgress,
             // New exports
-            uploadFile,
-            uploadProgress,
-            uploadStatus,
+            uploadFiles,
             dragOver,
             handleDrop,
             handleFileSelect,

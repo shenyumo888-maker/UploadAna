@@ -1,4 +1,3 @@
-import os
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache
 
@@ -32,9 +31,3 @@ def get_settings():
     return Settings()
 
 settings = get_settings()
-
-# 兼容旧代码的全局变量导出（逐步废弃）
-DASHSCOPE_API_KEY = settings.DASHSCOPE_API_KEY
-TAVILY_API_KEY = settings.TAVILY_API_KEY
-REDIS_URL = settings.REDIS_URL
-APP_NAME = settings.APP_NAME

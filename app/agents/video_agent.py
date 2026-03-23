@@ -3,7 +3,6 @@ import cv2
 import dashscope
 from http import HTTPStatus
 import json
-import time
 import re
 from app.core.config import settings
 from app.utils.logger import app_logger
@@ -46,11 +45,6 @@ def extract_frames(video_path, max_frames=30):
                 break
             
             if count % interval == 0:
-                # 将帧转为临时文件路径或直接使用（这里为了简单，先不存盘，DashScope支持本地路径列表吗？
-                # DashScope MultiModalConversation 实际上支持本地路径 "file://..." 格式，
-                # 但最好是先保存为临时图片文件。
-                # 为了性能，这里我们假设调用方或者在此处保存临时图片。
-                # 简化起见，我们暂存到临时目录
                 temp_frame_path = f"{video_path}_frame_{len(frames)}.jpg"
                 cv2.imwrite(temp_frame_path, frame)
                 frames.append(temp_frame_path)
@@ -193,38 +187,13 @@ def vl_analysis(file_path):
         if not isinstance(result_str, str):
             return {"raw_result": str(result_str), "error": f"Unexpected result type: {type(result_str)}"}
 
-        # 尝试解析 JSON
-        try:
-            # 优先使用正则提取 markdown code block 中的内容
-            # 匹配 ```json ... ``` 或 ``` ... ```
-            match = re.search(r'```(?:json)?\s*(\{.*?\})\s*```', result_str, re.DOTALL)
-            if match:
-                clean_str = match.group(1)
-            else:
-                # 否则尝试直接清理首尾空白
-                clean_str = result_str.strip()
-            
-            return json.loads(clean_str)
-        except json.JSONDecodeError:
-            # 如果解析失败，尝试更激进的正则提取 {} 包裹的内容
-            try:
-                match = re.search(r'(\{.*\})', result_str, re.DOTALL)
-                if match:
-                    return json.loads(match.group(1))
-            except:
-                pass
-            
-            return {"raw_result": result_str, "error": "JSON parse failed"}
+        # 使用统一的 JSON 解析器
+        from app.utils.parser import parse_llm_json
+        parsed = parse_llm_json(result_str)
+        if parsed:
+            return parsed
+        return {"raw_result": result_str, "error": "JSON parse failed"}
     
     return {"error": "Analysis failed"}
 
-# 保留旧函数以兼容（或者直接废弃，看现有代码调用情况）
-# 现有代码在 app/api/video.py 中调用了 analyze_video_sentiment
-# 我们暂时保留它，但让它内部调用新的逻辑，或者保持原样如果它工作正常。
-# 为了满足"新增"需求，我们主要关注 vl_analysis。
-def analyze_video_sentiment(video_path: str, topic: str = ""):
-    # 这是一个旧接口的简单适配，或者我们可以重写它
-    res = vl_analysis(video_path)
-    if "error" in res:
-        return f"Error: {res['error']}"
-    return json.dumps(res, ensure_ascii=False)
+

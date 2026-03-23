@@ -8,7 +8,7 @@ from app.utils.parser import parse_llm_json
 
 import concurrent.futures
 
-def analyze_sentiment_stream_generator(topic: str):
+def analyze_sentiment_stream_generator(topic: str, extra_context: str = ""):
     """
     Synchronous generator for streaming sentiment analysis.
     Yields dicts representing different stages of the analysis.
@@ -22,6 +22,10 @@ def analyze_sentiment_stream_generator(topic: str):
     except Exception:
         context = "搜索失败，仅基于模型进行云推演分析。"
     yield {"event": "status", "data": "搜索完成，开始多维分析..."}
+
+    # 合并额外的视觉/多模态上下文
+    if extra_context:
+        context = f"【多模态视觉提取内容】：{extra_context}\n\n【全网搜索内容】：{context}"
 
     # Phase 2: Parallel Intro & Data
     # 使用线程池并发调用前两个独立阶段
@@ -85,61 +89,4 @@ def analyze_sentiment_stream_generator(topic: str):
     result['report_markdown'] = full_report
     yield {"event": "done", "data": result}
 
-def analyze_sentiment(topic: str) -> dict:
-    try:
-        context = search_topic(topic)
-    except Exception:
-        context = "搜索失败，仅基于模型进行云推演分析。"
 
-    # 使用线程池并发调用前两个独立阶段，大幅减少等待时间
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-        # 提交阶段 1 和 2
-        future_intro = executor.submit(call_qwen, sentiment_intro_prompt(topic, context))
-        future_data = executor.submit(call_qwen, sentiment_data_prompt(topic, context))
-        
-        # 获取结果 (阻塞直到两个都完成)
-        try:
-            intro_content = future_intro.result()
-        except Exception as e:
-            intro_content = f"> (背景生成失败: {str(e)})"
-            
-        try:
-            raw_data = future_data.result()
-        except Exception as e:
-            raw_data = json.dumps({"report_markdown": f"数据提取失败: {str(e)}", "sentiment_score": 50})
-
-    # Process data
-    try:
-        raw_data = future_data.result()
-        result = parse_llm_json(raw_data)
-        if not result:
-            raise ValueError("Empty or invalid JSON")
-    except Exception as e:
-        result = {
-            "sentiment_score": 50,
-            "sentiment_label": "解析数据异常",
-            "keywords": [],
-            "trend_data": [],
-            "sentiment_distribution": [],
-            "source_distribution": [],
-            "related_topics": [],
-            "regional_distribution": [],
-            "report_markdown": raw_data if 'raw_data' in locals() else f"数据提取失败: {str(e)}"
-        }
-
-    # 第三阶段：深度研判 (必须等待第二阶段完成，因为它需要数据分析作为参考)
-    try:
-        conclusion_content = call_qwen(sentiment_conclusion_prompt(topic, context, result.get('report_markdown', '')))
-    except Exception as e:
-        conclusion_content = f"> (研判建议生成失败: {str(e)})"
-
-    # 组合最终报告
-    report_body = result.get('report_markdown', '')
-    result['intro_markdown'] = intro_content
-    result['data_markdown'] = report_body
-    result['conclusion_markdown'] = conclusion_content
-    
-    full_report = f"{intro_content}\n\n{report_body}\n\n{conclusion_content}"
-    result['report_markdown'] = full_report
-
-    return result

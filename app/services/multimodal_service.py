@@ -1,7 +1,6 @@
 import json
-import time
 from datetime import datetime
-from sqlmodel import Session, select
+from sqlmodel import Session
 from app.core.database import engine
 from app.models.db_models import MultimodalTask
 from app.agents.video_agent import vl_analysis

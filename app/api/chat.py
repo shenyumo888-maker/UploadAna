@@ -8,11 +8,10 @@ from typing import Optional, List, Dict, Any
 import json
 import dashscope
 from http import HTTPStatus
-from app.core.config import DASHSCOPE_API_KEY
-from datetime import datetime
+from app.core.config import settings
 
 # Set API Key
-dashscope.api_key = DASHSCOPE_API_KEY
+dashscope.api_key = settings.DASHSCOPE_API_KEY
 
 router = APIRouter()
 
@@ -71,6 +70,7 @@ def build_prompt(report_data: Dict, question: str, history: List[ReportChatHisto
     {report_text}
     
     【核心指标数据】
+    - 摘要: {summary}
     - 情感得分: {metrics}
     - 关键词: {', '.join(keywords)}
     - 情感分布: {sentiment_desc}
