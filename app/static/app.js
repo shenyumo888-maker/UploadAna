@@ -599,19 +599,23 @@ const app = createApp({
             hotLoading.value = true; 
             try {
                 const res = await fetch('/api/hot-topics');
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
                 const json = await res.json();
-                if (json.success) {
-                    const oldData = JSON.stringify(hotTopics.value);
-                    const newData = JSON.stringify(json.data);
-                    if (oldData === newData && hotTopics.value.length > 0) {
-                        showToast('当前已是最新榜单，暂无更新 ✨');
-                    } else {
-                        hotTopics.value = json.data;
-                        showToast('热搜榜单更新成功 🚀');
-                    }
+                if (!json.success) {
+                    showToast('热搜加载失败，使用默认数据');
+                    return;
+                }
+                const oldData = JSON.stringify(hotTopics.value);
+                const newData = JSON.stringify(json.data);
+                if (oldData === newData && hotTopics.value.length > 0) {
+                    showToast('当前已是最新榜单，暂无更新');
+                } else {
+                    hotTopics.value = json.data;
+                    showToast('热搜榜单已更新');
                 }
             } catch (e) {
                 console.error("热搜获取失败:", e);
+                showToast('热搜刷新失败，请稍后重试');
             } finally {
                 setTimeout(() => { hotLoading.value = false; }, 500);
             }
@@ -712,167 +716,523 @@ const app = createApp({
             }
         };
 
-        const commonOption = {
-            backgroundColor: 'transparent',
-            tooltip: { trigger: 'item' },
-            textStyle: { fontFamily: 'Inter, sans-serif' }
+        // ─── Shared Chart Utilities ───────────────────────────────────
+        const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Noto Sans SC', sans-serif";
+        const C = {
+            // Apple-inspired muted palette
+            accent:   '#5e5ce6',   // Apple indigo
+            accent2:  '#7d7aff',
+            accent3:  '#a8a6ff',
+            violet:   '#bf5af2',   // Apple purple
+            cyan:     '#64d2ff',   // Apple cyan
+            cyan2:    '#9de8ff',
+            teal:     '#6ac4dc',   // Apple teal (muted)
+            positive: '#30d158',   // Apple green
+            warning:  '#ffd60a',   // Apple yellow
+            negative: '#ff453a',   // Apple red
+            rose:     '#ff6482',   // Apple pink
+            amber:    '#ff9f0a',   // Apple orange
+            t1:        '#f5f5f7',
+            t2:        '#86868b',
+            t3:        '#6e6e73',
+            t4:        '#48484a',
+            dim:       '#3a3a3c',
+            bg:        '#161617',
+            bgCard:    '#1c1c1e',
+            bgElevated:'#2c2c2e',
+            split:     'rgba(255,255,255,0.05)',
+            splitLt:   'rgba(255,255,255,0.03)',
+            border:    'rgba(255,255,255,0.08)',
         };
 
-        // ... (Keep existing chart functions: initTrendChart, initSentimentChart, etc.) ...
+        const mkTooltip = (extra = {}) => ({
+            backgroundColor: 'rgba(24,24,27,0.95)',
+            borderColor: 'rgba(255,255,255,0.08)',
+            borderWidth: 1,
+            padding: [10, 14],
+            textStyle: { color: C.t1, fontSize: 12, fontFamily: FONT, lineHeight: 20 },
+            extraCssText: 'border-radius:10px;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,0.5);',
+            ...extra,
+        });
+
+        const tipDot = (color) => `<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${color};flex-shrink:0;"></span>`;
+        const tipSquare = (color) => `<span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${color};flex-shrink:0;"></span>`;
+
+        const commonOption = {
+            backgroundColor: 'transparent',
+            textStyle: { fontFamily: FONT, color: C.t2 },
+            animationDuration: 800,
+            animationEasing: 'cubicOut',
+            animationDelay: idx => idx * 25,
+        };
+
+        // ─── Trend ────────────────────────────────────────────────────
         const initTrendChart = (historyData, forecastData) => {
             const safeForecast = forecastData || [];
             const chart = echarts.init(document.getElementById('trendChart'));
             chartInstances.push(chart);
-            const historyDates = historyData.map(i => i.date);
+
+            const historyDates  = historyData.map(i => i.date);
             const forecastDates = safeForecast.map(i => i.date);
-            const allDates = [...historyDates, ...forecastDates];
+            const allDates      = [...historyDates, ...forecastDates];
             const historyScores = historyData.map(i => i.score);
-            const gapData = new Array(historyScores.length - 1).fill(null);
-            const lastHistoryScore = historyScores[historyScores.length - 1];
-            const forecastScores = [...gapData, lastHistoryScore, ...safeForecast.map(i => i.score)];
+            const gap           = new Array(historyScores.length - 1).fill(null);
+            const lastScore     = historyScores[historyScores.length - 1];
+            const forecastScores = [...gap, lastScore, ...safeForecast.map(i => i.score)];
+            const maxVal = Math.max(...historyScores, ...safeForecast.map(i => i.score || 0));
+            const minVal = Math.min(...historyScores, ...safeForecast.map(i => i.score || 99));
 
             chart.setOption({
                 ...commonOption,
-                title: { text: '态势感知：历史走势与AI预测', left: 'center', top: '0%', textStyle: { color: '#94a3b8', fontSize: 14, fontWeight: 'normal' } },
-                grid: { top: 50, bottom: 20, left: 40, right: 20, containLabel: true },
-                tooltip: { trigger: 'axis' },
-                legend: { data: ['历史热度', '趋势预测'], top: '25px', textStyle: { color: '#cbd5e1' } },
-                xAxis: { type: 'category', data: allDates, boundaryGap: false, axisLine: { lineStyle: { color: '#64748b' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'value', splitLine: { lineStyle: { color: '#334155', type: 'dashed' } }, axisLine: { show: false }, axisLabel: { color: '#94a3b8' } },
+                grid: { top: 44, bottom: 32, left: 12, right: 16, containLabel: true },
+                tooltip: {
+                    ...mkTooltip({ trigger: 'axis' }),
+                    formatter: params => {
+                        const p = params.filter(p => p.value != null);
+                        if (!p.length) return '';
+                        let s = `<div style="font-size:11px;color:${C.t3};margin-bottom:6px;letter-spacing:.04em;">${p[0].axisValue}</div>`;
+                        p.forEach(item => {
+                            s += `<div style="display:flex;align-items:center;gap:8px;margin:4px 0;">
+                                    ${tipDot(item.color)}
+                                    <span style="color:${C.t2}">${item.seriesName}</span>
+                                    <span style="margin-left:auto;font-weight:600;color:${C.t1};font-variant-numeric:tabular-nums;padding-left:16px;">${item.value}</span>
+                                  </div>`;
+                        });
+                        return s;
+                    },
+                    axisPointer: { type: 'line', lineStyle: { color: 'rgba(255,255,255,0.08)', width: 1 } },
+                },
+                legend: {
+                    data: ['历史热度', '趋势预测'], top: 0, left: 0,
+                    textStyle: { color: C.t3, fontSize: 11, fontFamily: FONT },
+                    icon: 'circle', itemWidth: 7, itemHeight: 7, itemGap: 18,
+                    selectedMode: false,
+                },
+                xAxis: {
+                    type: 'category', data: allDates, boundaryGap: false,
+                    axisLine:  { lineStyle: { color: C.split } },
+                    axisLabel: { color: C.t4, fontSize: 11, fontFamily: FONT, margin: 10,
+                                 formatter: v => v.length > 5 ? v.slice(5) : v },
+                    axisTick:  { show: false },
+                    splitLine: { show: false },
+                },
+                yAxis: {
+                    type: 'value',
+                    min: Math.max(0, Math.floor(minVal * 0.88)),
+                    max: Math.ceil(maxVal * 1.06),
+                    splitLine: { lineStyle: { color: C.splitLt } },
+                    axisLine:  { show: false },
+                    axisLabel: { color: C.t4, fontSize: 11, fontFamily: FONT,
+                                 formatter: v => v >= 10000 ? (v/10000).toFixed(1) + 'w' : v },
+                    axisTick:  { show: false },
+                },
                 series: [
-                    { name: '历史热度', type: 'line', data: [...historyScores, ...new Array(forecastDates.length).fill(null)], smooth: true, symbol: 'circle', symbolSize: 8, itemStyle: { color: '#6366f1' }, lineStyle: { width: 3 }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{ offset: 0, color: 'rgba(99, 102, 241, 0.4)' }, { offset: 1, color: 'rgba(99, 102, 241, 0)' }]) } },
-                    { name: '趋势预测', type: 'line', data: forecastScores, smooth: true, symbol: 'emptyCircle', symbolSize: 6, itemStyle: { color: '#f43f5e' }, lineStyle: { width: 3, type: 'dashed' } }
-                ]
+                    {
+                        name: '历史热度', type: 'line',
+                        data: [...historyScores, ...new Array(forecastDates.length).fill(null)],
+                        smooth: 0.4, symbol: 'circle', symbolSize: 5, showSymbol: false,
+                        itemStyle: { color: C.cyan, borderColor: C.bg, borderWidth: 2 },
+                        lineStyle: { width: 2.5, color: C.cyan, cap: 'round' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(100,210,255,0.13)' },
+                                { offset: 1, color: 'rgba(100,210,255,0)' },
+                            ])
+                        },
+                        emphasis: { focus: 'series', itemStyle: { borderWidth: 2 } },
+                        markArea: safeForecast.length > 0 ? {
+                            silent: true,
+                            itemStyle: { color: 'rgba(255,159,10,0.04)' },
+                            data: [[
+                                { xAxis: historyDates[historyDates.length - 1] || '' },
+                                { xAxis: forecastDates[forecastDates.length - 1] || '' },
+                            ]],
+                        } : undefined,
+                        markLine: safeForecast.length > 0 ? {
+                            silent: true, symbol: ['none', 'none'],
+                            lineStyle: { color: 'rgba(255,159,10,0.3)', type: [5, 4], width: 1 },
+                            label: {
+                                show: true, position: 'end',
+                                formatter: 'AI 预测',
+                                color: C.amber, fontSize: 10, fontFamily: FONT,
+                                padding: [3, 7], backgroundColor: 'rgba(255,159,10,0.1)',
+                                borderRadius: 4,
+                            },
+                            data: [{ xAxis: historyDates[historyDates.length - 1] }],
+                        } : undefined,
+                    },
+                    {
+                        name: '趋势预测', type: 'line',
+                        data: forecastScores,
+                        smooth: 0.4, symbol: 'emptyCircle', symbolSize: 4, showSymbol: false,
+                        lineStyle: { width: 2, type: [6, 4], color: C.amber, cap: 'round' },
+                        itemStyle: { color: C.amber },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(255,159,10,0.08)' },
+                                { offset: 1, color: 'rgba(255,159,10,0)' },
+                            ])
+                        },
+                    },
+                ],
             });
         };
 
+        // ─── Sentiment Donut ──────────────────────────────────────────
         const initSentimentChart = (data) => {
             const chart = echarts.init(document.getElementById('sentimentChart'));
             chartInstances.push(chart);
-            const colors = { '正面': '#10b981', '中立': '#f59e0b', '负面': '#ef4444' };
+
+            const colorMap = { '正面': C.positive, '中立': C.warning, '负面': C.negative };
+            const sorted   = [...data].sort((a, b) => b.value - a.value);
+            const dominant = sorted[0] || { name: '—', value: 0 };
+            const domColor = colorMap[dominant.name] || C.accent;
+
             chart.setOption({
                 ...commonOption,
-                series: [{ type: 'pie', radius: ['40%', '70%'], itemStyle: { borderRadius: 10, borderColor: '#1e293b', borderWidth: 2 }, label: { color: '#e2e8f0' }, data: data.map(item => ({ value: item.value, name: item.name, itemStyle: { color: colors[item.name] || '#94a3b8' } })) }]
+                tooltip: {
+                    ...mkTooltip(),
+                    formatter: p => {
+                        const c = colorMap[p.name] || C.accent;
+                        return `<div style="display:flex;align-items:center;gap:8px;">
+                                  ${tipDot(c)}
+                                  <span style="color:${C.t2}">${p.name}</span>
+                                  <span style="margin-left:12px;font-weight:600;color:${C.t1};font-variant-numeric:tabular-nums;">${p.value}%</span>
+                                </div>`;
+                    },
+                },
+                legend: {
+                    bottom: 8, left: 'center',
+                    orient: 'horizontal', itemGap: 24,
+                    selectedMode: false,
+                    textStyle: {
+                        color: C.t2, fontSize: 12, fontFamily: FONT,
+                        rich: {
+                            name: { color: C.t3, fontSize: 12, fontFamily: FONT },
+                            val:  { color: C.t1, fontSize: 13, fontWeight: 600, fontFamily: FONT },
+                        },
+                    },
+                    icon: 'circle', itemWidth: 8, itemHeight: 8,
+                    formatter: name => {
+                        const d = data.find(i => i.name === name);
+                        return d ? `{name|${name}}  {val|${d.value}%}` : name;
+                    },
+                },
+                graphic: [{
+                    type: 'group', left: 'center', top: 'middle',
+                    children: [
+                        {
+                            type: 'text',
+                            style: {
+                                text: dominant.value + '%',
+                                fill: domColor,
+                                fontSize: 28, fontWeight: 700, fontFamily: FONT,
+                                x: 0, y: -16, textAlign: 'center',
+                                fontVariantNumeric: 'tabular-nums',
+                            },
+                        },
+                        {
+                            type: 'text',
+                            style: {
+                                text: dominant.name || '—',
+                                fill: C.t3,
+                                fontSize: 12, fontFamily: FONT,
+                                x: 0, y: 16, textAlign: 'center',
+                            },
+                        },
+                    ],
+                }],
+                series: [{
+                    type: 'pie',
+                    radius: ['52%', '74%'],
+                    center: ['50%', '48%'],
+                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    label: { show: false },
+                    labelLine: { show: false },
+                    selectedMode: false,
+                    emphasis: { scale: true, scaleSize: 4 },
+                    animationType: 'scale',
+                    animationEasing: 'cubicOut',
+                    data: data.map(item => ({
+                        value: item.value, name: item.name,
+                        itemStyle: { color: colorMap[item.name] || C.dim },
+                    })),
+                }],
             });
         };
 
+        // ─── Source Donut ─────────────────────────────────────────────
         const initSourceChart = (data) => {
             const chart = echarts.init(document.getElementById('sourceChart'));
             chartInstances.push(chart);
+
+            const palette = [C.accent, C.cyan, C.violet, C.teal, C.positive, C.amber, C.rose, C.accent3];
+            const sorted  = [...data].sort((a, b) => b.value - a.value);
+
             chart.setOption({
                 ...commonOption,
-                series: [{ type: 'pie', radius: [20, 100], center: ['50%', '50%'], roseType: 'area', itemStyle: { borderRadius: 8 }, label: { color: '#e2e8f0' }, data: data }]
+                tooltip: {
+                    ...mkTooltip(),
+                    formatter: p => {
+                        const idx = sorted.findIndex(i => i.name === p.name);
+                        const c = palette[idx % palette.length];
+                        return `<div style="display:flex;align-items:center;gap:8px;">
+                                  ${tipDot(c)}
+                                  <span style="color:${C.t2}">${p.name}</span>
+                                  <span style="margin-left:12px;font-weight:600;color:${C.t1};">${p.percent?.toFixed(1) ?? p.value}%</span>
+                                </div>`;
+                    },
+                },
+                legend: {
+                    type: 'scroll', bottom: 4, left: 'center',
+                    orient: 'horizontal', itemGap: 14,
+                    selectedMode: false,
+                    textStyle: { color: C.t2, fontSize: 11, fontFamily: FONT },
+                    icon: 'circle', itemWidth: 7, itemHeight: 7,
+                    pageIconColor: C.t3, pageTextStyle: { color: C.t3 },
+                },
+                series: [{
+                    type: 'pie',
+                    radius: ['40%', '66%'],
+                    center: ['50%', '44%'],
+                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    label: {
+                        show: true, position: 'outside',
+                        formatter: '{b}\n{d}%',
+                        color: C.t3, fontSize: 11, fontFamily: FONT,
+                        lineHeight: 16, fontWeight: 400,
+                        minShowLabelAngle: 18,
+                    },
+                    labelLine: { length: 8, length2: 10, smooth: 0.3, lineStyle: { color: C.split } },
+                    emphasis: {
+                        scale: true, scaleSize: 4,
+                        label: { fontSize: 12, fontWeight: 600, color: C.t1 },
+                    },
+                    data: sorted.map((item, i) => ({
+                        value: item.value, name: item.name,
+                        itemStyle: { color: palette[i % palette.length] },
+                    })),
+                }],
             });
         };
 
+        // ─── Region Bar ──────────────────────────────────────────────
         const initRegionChart = (data) => {
             const chart = echarts.init(document.getElementById('regionChart'));
             chartInstances.push(chart);
+
+            const sorted = [...data].sort((a, b) => a.value - b.value);
+            const n = sorted.length;
+            const maxV = sorted.length ? sorted[n - 1].value : 1;
+
             chart.setOption({
                 ...commonOption,
-                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                grid: { top: 10, bottom: 20, left: 10, right: 30, containLabel: true },
-                xAxis: { type: 'value', splitLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'category', data: data.map(i => i.name).reverse(), axisLine: { lineStyle: { color: '#64748b' } }, axisLabel: { color: '#e2e8f0' } },
-                series: [{ type: 'bar', data: data.map(i => i.value).reverse(), itemStyle: { borderRadius: [0, 4, 4, 0], color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [{ offset: 0, color: '#38bdf8' }, { offset: 1, color: '#3b82f6' }]) } }]
+                grid: { top: 8, bottom: 8, left: 8, right: 56, containLabel: true },
+                tooltip: {
+                    ...mkTooltip({ trigger: 'axis' }),
+                    formatter: params => {
+                        const p = params[0];
+                        return `<div style="display:flex;align-items:center;gap:8px;">
+                                  ${tipSquare(C.accent)}
+                                  <span style="color:${C.t2}">${p.name}</span>
+                                  <span style="margin-left:12px;font-weight:600;color:${C.t1};font-variant-numeric:tabular-nums;">${p.value}</span>
+                                </div>`;
+                    },
+                    axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(255,255,255,0.02)' } },
+                },
+                xAxis: { type: 'value', show: false, max: value => Math.ceil(value.max * 1.2) },
+                yAxis: {
+                    type: 'category', data: sorted.map(i => i.name),
+                    axisLine: { show: false }, axisTick: { show: false },
+                    axisLabel: { color: C.t2, fontSize: 12, fontFamily: FONT, margin: 10 },
+                },
+                series: [{
+                    type: 'bar',
+                    data: sorted.map((item, i) => {
+                        const ratio = maxV > 0 ? item.value / maxV : 0;
+                        const alpha = 0.3 + ratio * 0.7;
+                        return {
+                            value: item.value,
+                            itemStyle: {
+                                borderRadius: [0, 6, 6, 0],
+                                color: `rgba(94,92,230,${alpha.toFixed(2)})`,
+                            },
+                        };
+                    }),
+                    barMaxWidth: 16,
+                    animationDelay: idx => idx * 50,
+                    label: {
+                        show: true, position: 'right', distance: 8,
+                        color: C.t3, fontSize: 11, fontFamily: FONT,
+                        fontVariantNumeric: 'tabular-nums',
+                    },
+                    emphasis: {
+                        itemStyle: { color: C.accent },
+                    },
+                }],
             });
         };
 
+        // ─── Topic Bar ───────────────────────────────────────────────
         const initTopicChart = (data) => {
             const chart = echarts.init(document.getElementById('topicChart'));
             chartInstances.push(chart);
+
+            const sorted = [...data].sort((a, b) => a.value - b.value);
+            const n = sorted.length;
+            const maxV = sorted.length ? sorted[n - 1].value : 1;
+
             chart.setOption({
                 ...commonOption,
-                tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
-                grid: { top: 10, bottom: 20, left: 10, right: 30, containLabel: true },
-                xAxis: { type: 'value', splitLine: { lineStyle: { color: '#334155' } }, axisLabel: { color: '#94a3b8' } },
-                yAxis: { type: 'category', data: data.map(i => i.name).reverse(), axisLine: { lineStyle: { color: '#64748b' } }, axisLabel: { color: '#e2e8f0', width: 110, overflow: 'break' } },
-                series: [{ type: 'bar', data: data.map(i => i.value).reverse(), itemStyle: { borderRadius: [0, 4, 4, 0], color: new echarts.graphic.LinearGradient(1, 0, 0, 0, [{ offset: 0, color: '#a78bfa' }, { offset: 1, color: '#7c3aed' }]) } }]
+                grid: { top: 8, bottom: 8, left: 8, right: 56, containLabel: true },
+                tooltip: {
+                    ...mkTooltip({ trigger: 'axis' }),
+                    formatter: params => {
+                        const p = params[0];
+                        return `<div style="display:flex;align-items:center;gap:8px;">
+                                  ${tipSquare(C.violet)}
+                                  <span style="color:${C.t2};max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${p.name}</span>
+                                  <span style="margin-left:12px;font-weight:600;color:${C.t1};font-variant-numeric:tabular-nums;">${p.value}</span>
+                                </div>`;
+                    },
+                    axisPointer: { type: 'shadow', shadowStyle: { color: 'rgba(255,255,255,0.02)' } },
+                },
+                xAxis: { type: 'value', show: false, max: value => Math.ceil(value.max * 1.2) },
+                yAxis: {
+                    type: 'category', data: sorted.map(i => i.name),
+                    axisLine: { show: false }, axisTick: { show: false },
+                    axisLabel: { color: C.t2, fontSize: 12, fontFamily: FONT, margin: 10,
+                                 width: 110, overflow: 'truncate' },
+                },
+                series: [{
+                    type: 'bar',
+                    data: sorted.map((item, i) => {
+                        const ratio = maxV > 0 ? item.value / maxV : 0;
+                        const alpha = 0.3 + ratio * 0.7;
+                        return {
+                            value: item.value,
+                            itemStyle: {
+                                borderRadius: [0, 6, 6, 0],
+                                color: `rgba(191,90,242,${alpha.toFixed(2)})`,
+                            },
+                        };
+                    }),
+                    barMaxWidth: 16,
+                    animationDelay: idx => idx * 50,
+                    label: {
+                        show: true, position: 'right', distance: 8,
+                        color: C.t3, fontSize: 11, fontFamily: FONT,
+                        fontVariantNumeric: 'tabular-nums',
+                    },
+                    emphasis: {
+                        itemStyle: { color: C.violet },
+                    },
+                }],
             });
         };
 
-        // === 新增 Visual Charts 实现 ===
+        // ─── Visual Word Cloud ────────────────────────────────────────
         const initVisualWordCloud = () => {
             const chart = echarts.init(document.getElementById('visualWordCloud'));
             chartInstances.push(chart);
-            
+
             const entities = result.value.visual_analysis?.entities || [];
-            // 简单转为词云数据，假设权重都为1，或者随机
-            const data = entities.map(name => ({
+            const palette  = [C.accent2, C.cyan, C.violet, C.teal, C.positive, C.amber, C.rose, C.accent3, C.cyan2, C.accent];
+            const wdata = entities.map((name, i) => ({
                 name,
-                value: Math.floor(Math.random() * 100) + 20
+                value: Math.round(100 - i * (65 / Math.max(entities.length, 1))),
+                textStyle: { color: palette[i % palette.length], fontFamily: FONT },
             }));
-            
+
             chart.setOption({
                 ...commonOption,
+                tooltip: {
+                    ...mkTooltip(),
+                    formatter: p => `<span style="color:${C.t1};font-weight:600;">${p.name}</span>`,
+                },
                 series: [{
                     type: 'wordCloud',
                     shape: 'circle',
-                    left: 'center',
-                    top: 'center',
-                    width: '90%',
-                    height: '90%',
-                    right: null,
-                    bottom: null,
-                    sizeRange: [12, 60],
-                    rotationRange: [-90, 90],
-                    rotationStep: 45,
-                    gridSize: 8,
+                    left: 'center', top: 'center',
+                    width: '90%', height: '90%',
+                    sizeRange: [13, 46],
+                    rotationRange: [-15, 15],
+                    rotationStep: 15,
+                    gridSize: 14,
                     drawOutOfBound: false,
-                    textStyle: {
-                        fontFamily: 'sans-serif',
-                        fontWeight: 'bold',
-                        color: function () {
-                            return 'rgb(' + [
-                                Math.round(Math.random() * 160),
-                                Math.round(Math.random() * 160),
-                                Math.round(Math.random() * 160)
-                            ].join(',') + ')';
-                        }
-                    },
-                    emphasis: {
-                        focus: 'self',
-                        textStyle: {
-                            shadowBlur: 10,
-                            shadowColor: '#333'
-                        }
-                    },
-                    data: data
-                }]
+                    layoutAnimation: true,
+                    textStyle: { fontFamily: FONT, fontWeight: 600 },
+                    emphasis: { focus: 'self', textStyle: { color: C.t1 } },
+                    data: wdata,
+                }],
             });
         };
 
+        // ─── Visual Emotion Pie ───────────────────────────────────────
         const initVisualEmotionPie = () => {
             const chart = echarts.init(document.getElementById('visualEmotionPie'));
             chartInstances.push(chart);
-            
-            const em = result.value.visual_analysis?.emotion || 'neutral'; // positive, negative, neutral
-            const conf = result.value.visual_analysis?.confidence || 0.8;
-            
-            // 构造饼图数据：当前情绪 vs 其他
-            const data = [];
-            const colors = { 'positive': '#10b981', 'neutral': '#f59e0b', 'negative': '#ef4444' };
-            const labels = { 'positive': '正面', 'neutral': '中立', 'negative': '负面' };
-            
-            data.push({ value: conf, name: labels[em] || em, itemStyle: { color: colors[em] || '#888' } });
-            data.push({ value: 1 - conf, name: '其他可能性', itemStyle: { color: '#334155' } });
-            
+
+            const em      = result.value.visual_analysis?.emotion || 'neutral';
+            const conf    = result.value.visual_analysis?.confidence || 0.8;
+            const colorMap = { positive: C.positive, neutral: C.warning, negative: C.negative };
+            const labelMap = { positive: '正面', neutral: '中立', negative: '负面' };
+            const emColor  = colorMap[em] || C.accent;
+            const confPct  = Math.round(conf * 100);
+
             chart.setOption({
                 ...commonOption,
+                tooltip: {
+                    ...mkTooltip(),
+                    formatter: p => p.name === '其他' ? '' :
+                        `<span style="color:${emColor};font-weight:600;">${labelMap[em]}</span><span style="color:${C.t2};margin-left:8px;">置信度 ${confPct}%</span>`,
+                },
+                graphic: [{
+                    type: 'group', left: 'center', top: 'middle',
+                    children: [
+                        {
+                            type: 'text',
+                            style: {
+                                text: confPct + '%', fill: emColor,
+                                fontSize: 26, fontWeight: 700, fontFamily: FONT,
+                                x: 0, y: -14, textAlign: 'center',
+                                fontVariantNumeric: 'tabular-nums',
+                            },
+                        },
+                        {
+                            type: 'text',
+                            style: {
+                                text: labelMap[em] || em, fill: C.t3,
+                                fontSize: 12, fontFamily: FONT,
+                                x: 0, y: 14, textAlign: 'center',
+                            },
+                        },
+                    ],
+                }],
                 series: [{
                     type: 'pie',
-                    radius: ['50%', '70%'],
+                    radius: ['54%', '74%'],
+                    center: ['50%', '50%'],
                     avoidLabelOverlap: false,
-                    label: {
-                        show: true,
-                        position: 'center',
-                        formatter: '{b}\n{d}%',
-                        color: '#fff',
-                        fontSize: 16
-                    },
+                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    label: { show: false },
                     labelLine: { show: false },
-                    data: data
-                }]
+                    selectedMode: false,
+                    emphasis: { scale: true, scaleSize: 4 },
+                    animationType: 'scale',
+                    animationEasing: 'cubicOut',
+                    data: [
+                        {
+                            value: conf, name: labelMap[em] || em,
+                            itemStyle: { color: emColor },
+                        },
+                        {
+                            value: 1 - conf, name: '其他',
+                            itemStyle: { color: 'rgba(255,255,255,0.04)' },
+                            emphasis: { itemStyle: { color: 'rgba(255,255,255,0.06)' } },
+                        },
+                    ],
+                }],
             });
         };
 
@@ -885,6 +1245,7 @@ const app = createApp({
                 });
             }
         });
+
 
         return {
             topic,
@@ -931,4 +1292,3 @@ const app = createApp({
 // 注册 ChatPanel 组件
 app.component('chat-panel', ChatPanel);
 app.mount('#app');
-
