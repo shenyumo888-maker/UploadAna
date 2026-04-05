@@ -1,6 +1,174 @@
 // app.js 专门处理 Vue + ECharts
 const { createApp, ref, computed, onMounted, nextTick, watch } = Vue;
 
+/* ── Global flowing light source system ── */
+(function initLightSources() {
+    function boot() {
+        const cvs = document.getElementById('heroGeoCanvas');
+        if (!cvs) return;
+        const ctx = cvs.getContext('2d');
+        let W, H;
+        const lights = [];
+        const TAU = Math.PI * 2;
+
+        function getActiveScrollOffset() {
+            const reportScroller = document.querySelector('.report-mode');
+            if (reportScroller) return reportScroller.scrollTop || 0;
+            return window.scrollY || document.documentElement.scrollTop || 0;
+        }
+
+        function resize() {
+            // Canvas is fixed; keep buffer in viewport space for stable light math.
+            W = cvs.width = window.innerWidth;
+            H = cvs.height = window.innerHeight;
+            if (lights.length === 0) createLights();
+        }
+
+        function createLights() {
+            lights.length = 0;
+            const big = Math.max(W, H);
+            const sy = getActiveScrollOffset();
+            lights.push({
+                x: W * 0.28, y: sy + H * 0.12,
+                r: big * 0.55,
+                vx: 0.04, vy: 0.025,
+                color: [150, 200, 255],
+                alpha: 0.07,
+                phase: 0,
+                cx: 0, cy: 0,
+            });
+            lights.push({
+                x: W * 0.72, y: sy + H * 0.28,
+                r: big * 0.48,
+                vx: -0.035, vy: 0.02,
+                color: [255, 175, 120],
+                alpha: 0.055,
+                phase: TAU * 0.33,
+                cx: 0, cy: 0,
+            });
+            lights.push({
+                x: W * 0.50, y: sy + H * 0.55,
+                r: big * 0.42,
+                vx: 0.025, vy: -0.035,
+                color: [185, 145, 255],
+                alpha: 0.04,
+                phase: TAU * 0.66,
+                cx: 0, cy: 0,
+            });
+        }
+
+        /* Per-element glass light calculation — updates CSS vars on each glass element */
+        const GLASS_SEL = '.glass, .glass-strong, .metric-card, .chart-wrapper, .input-wrap, .tab-bar, .toast, .source-card, .report-nav, .upload-zone, .hot-item, .btn-primary, .btn-ghost, .glass-pill-btn, .chat-panel, .chat-fab';
+        let glassTimer = 0;
+
+        function updateGlassElements(t) {
+            if (t - glassTimer < 70) return;
+            glassTimer = t;
+
+            const els = document.querySelectorAll(GLASS_SEL);
+
+            for (const el of els) {
+                const rect = el.getBoundingClientRect();
+                if (rect.width < 1 || rect.height < 1) continue;
+
+                const ecx = rect.left + rect.width / 2;
+                const ecy = rect.top + rect.height / 2;
+
+                // Find the dominant light contribution for this element
+                // Canvas is position:fixed so L.cx/L.cy are already in viewport coords
+                let bestI = 0, bestL = lights[0];
+                for (const L of lights) {
+                    const dx = L.cx - ecx, dy = L.cy - ecy;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const intensity = Math.max(0, 1 - dist / (L.r * 0.9));
+                    if (intensity > bestI) { bestI = intensity; bestL = L; }
+                }
+
+                // Light position as % within element's own box
+                const lxPct = ((bestL.cx - rect.left) / rect.width * 100);
+                const lyPct = ((bestL.cy - rect.top) / rect.height * 100);
+
+                // Direction from element center toward light
+                const dx = bestL.cx - ecx;
+                const dy = bestL.cy - ecy;
+                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+                const nx = dx / dist, ny = dy / dist;
+
+                // Per-edge dispersion intensity: edge facing the light gets dispersion
+                const topI    = (Math.max(0, -ny) * bestI).toFixed(3);
+                const bottomI = (Math.max(0,  ny) * bestI).toFixed(3);
+                const leftI   = (Math.max(0, -nx) * bestI).toFixed(3);
+                const rightI  = (Math.max(0,  nx) * bestI).toFixed(3);
+
+                const s = el.style;
+                s.setProperty('--el-lx', lxPct.toFixed(1) + '%');
+                s.setProperty('--el-ly', lyPct.toFixed(1) + '%');
+                s.setProperty('--el-i', bestI.toFixed(3));
+                s.setProperty('--dt', topI);
+                s.setProperty('--db', bottomI);
+                s.setProperty('--dl', leftI);
+                s.setProperty('--dr', rightI);
+                // Dominant light color
+                s.setProperty('--lc-r', bestL.color[0]);
+                s.setProperty('--lc-g', bestL.color[1]);
+                s.setProperty('--lc-b', bestL.color[2]);
+            }
+        }
+
+        function draw(t) {
+            requestAnimationFrame(draw);
+            if (!W || !H) { resize(); return; }
+            ctx.clearRect(0, 0, W, H);
+            const sy = getActiveScrollOffset();
+            const reportBoost = document.querySelector('.report-mode') ? 1.55 : 1;
+
+            for (const L of lights) {
+                const driftX = Math.sin(t * 0.00003 + L.phase) * W * 0.18;
+                const driftY = Math.cos(t * 0.000022 + L.phase * 1.3) * H * 0.12;
+                L.x += L.vx;
+                L.y += L.vy;
+
+                const margin = L.r * 0.4;
+                if (L.x < -margin) L.x = W + margin * 0.3;
+                if (L.x > W + margin) L.x = -margin * 0.3;
+                // Y bounds follow active scroll container so light/content stay coherent on scroll.
+                if (L.y < sy - margin) L.y = sy + H + margin * 0.3;
+                if (L.y > sy + H + margin) L.y = sy - margin * 0.3;
+
+                const cx = L.x + driftX;
+                const cy = L.y + driftY - sy;
+                L.cx = cx; L.cy = cy;
+
+                const pulse = 1 + Math.sin(t * 0.0003 + L.phase) * 0.12;
+                const r = L.r * pulse;
+                const c = L.color;
+                const a = L.alpha * reportBoost;
+
+                // Soft light orb: no hard core, smooth gaussian-like falloff
+                const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
+                grad.addColorStop(0,    `rgba(${c[0]},${c[1]},${c[2]},${a * 1.6})`);
+                grad.addColorStop(0.08, `rgba(${c[0]},${c[1]},${c[2]},${a * 1.4})`);
+                grad.addColorStop(0.20, `rgba(${c[0]},${c[1]},${c[2]},${a * 1.1})`);
+                grad.addColorStop(0.38, `rgba(${c[0]},${c[1]},${c[2]},${a * 0.7})`);
+                grad.addColorStop(0.58, `rgba(${c[0]},${c[1]},${c[2]},${a * 0.35})`);
+                grad.addColorStop(0.78, `rgba(${c[0]},${c[1]},${c[2]},${a * 0.12})`);
+                grad.addColorStop(1,    `rgba(${c[0]},${c[1]},${c[2]},0)`);
+
+                ctx.fillStyle = grad;
+                ctx.fillRect(cx - r, cy - r, r * 2, r * 2);
+            }
+
+            updateGlassElements(t);
+        }
+
+        window.addEventListener('resize', resize);
+        resize();
+        requestAnimationFrame(draw);
+    }
+    if (document.readyState === 'complete') { setTimeout(boot, 100); }
+    else { window.addEventListener('load', () => setTimeout(boot, 100)); }
+})();
+
 const app = createApp({
     setup() {
         const topic = ref('');
@@ -561,31 +729,75 @@ const app = createApp({
         };
 
 
-        // 解析 Markdown 并拆分为 [文字, 图表, 文字, 图表...] 的结构
-        const dataSegments = computed(() => {
-            if (!result.value || (!result.value.data_markdown && !result.value.report_markdown)) return [];
+        // ── JSON-driven chart insight computations ──
+        const latestTrendScore = computed(() => {
+            const d = result.value?.trend_data;
+            return d && d.length ? d[d.length - 1].score : '—';
+        });
+        const trendDirection = computed(() => {
+            const d = result.value?.trend_data;
+            if (!d || d.length < 2) return '持平';
+            const last = d[d.length - 1].score, prev = d[d.length - 2].score;
+            return last > prev ? '上升' : last < prev ? '下降' : '持平';
+        });
+        const dominantSentiment = computed(() => {
+            const d = result.value?.sentiment_distribution;
+            if (!d || !d.length) return { name: '—', value: 0 };
+            return d.reduce((a, b) => b.value > a.value ? b : a, d[0]);
+        });
+        const topSource = computed(() => {
+            const d = result.value?.source_distribution;
+            if (!d || !d.length) return { name: '—', value: 0 };
+            return d.reduce((a, b) => b.value > a.value ? b : a, d[0]);
+        });
+        const topRegion = computed(() => {
+            const d = result.value?.regional_distribution;
+            if (!d || !d.length) return { name: '—', value: 0 };
+            return d.reduce((a, b) => b.value > a.value ? b : a, d[0]);
+        });
+        const topTopic = computed(() => {
+            const d = result.value?.related_topics;
+            if (!d || !d.length) return { name: '—', value: 0 };
+            return d.reduce((a, b) => b.value > a.value ? b : a, d[0]);
+        });
 
-            const raw = result.value.data_markdown || result.value.report_markdown;
-            const parts = raw.split(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/);
+        // Split data_markdown into text segments interleaved with chart markers
+        // Returns { before: string, trend: string, sentiment: string, source: string, region: string, topic: string, after: string }
+        const analysisSegments = computed(() => {
+            const empty = { before: '', trend: '', sentiment: '', source: '', region: '', topic: '', after: '' };
+            if (!result.value) return empty;
+            const raw = result.value.data_markdown || result.value.report_markdown || '';
+            if (!raw.trim()) return empty;
 
-            const segments = [];
-            const validCharts = ['TREND', 'SENTIMENT', 'SOURCE', 'REGION', 'TOPIC', 'VISUAL'];
+            const chartOrder = ['TREND', 'SENTIMENT', 'SOURCE', 'REGION', 'TOPIC'];
+            const segKeys = ['before', 'trend', 'sentiment', 'source', 'region', 'topic', 'after'];
+            // Split by any [[CHART:XXX]] marker
+            const parts = raw.split(/\[\[CHART:\s*[A-Za-z]+\s*\]\]/);
+            // Extract marker order from the raw text
+            const markers = [...raw.matchAll(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/g)].map(m => m[1].toUpperCase());
 
-            for (let i = 0; i < parts.length; i++) {
-                if (i % 2 === 0) {
-                    if (parts[i] && parts[i].trim().length > 0) {
-                        segments.push({ type: 'text', content: parts[i] });
-                    }
-                } else {
-                    const type = parts[i].toUpperCase();
-                    if (validCharts.includes(type)) {
-                        segments.push({ type: 'chart', chartType: type });
-                    } else {
-                        segments.push({ type: 'text', content: `[[CHART: ${parts[i]}]]` });
-                    }
+            const segs = { before: '', trend: '', sentiment: '', source: '', region: '', topic: '', after: '' };
+            // First part is always "before"
+            segs.before = (parts[0] || '').trim();
+            // Assign subsequent parts to their corresponding chart key
+            for (let i = 0; i < markers.length; i++) {
+                const key = markers[i].toLowerCase();
+                if (key in segs) {
+                    segs[key] = (parts[i + 1] || '').trim();
                 }
             }
-            return segments;
+            // If there are more parts than markers, append to after
+            if (parts.length > markers.length + 1) {
+                segs.after = parts.slice(markers.length + 1).join('\n').trim();
+            }
+            return segs;
+        });
+
+        // Keep analysisText for backward compat (PDF export etc)
+        const analysisText = computed(() => {
+            if (!result.value) return '';
+            const raw = result.value.data_markdown || result.value.report_markdown || '';
+            return raw.replace(/\[\[CHART:\s*[A-Za-z]+\s*\]\]/g, '').trim();
         });
 
         // 点击热搜词直接分析
@@ -622,44 +834,246 @@ const app = createApp({
         };
 
         const exportPdf = async () => {
+            const data = result.value;
+            if (!data) { showToast('无报告数据'); return; }
+            showToast('正在生成 PDF，请稍候…');
+
+            // Make all sections visible so charts render
             const tempTab = activeTab.value;
-            activeTab.value = 'all'; // 强制显示所有 Tab 供截图
+            activeTab.value = 'all';
             await nextTick();
-            initCharts(result.value);
+            initCharts(data);
             await new Promise(r => setTimeout(r, 800));
 
-            const scaleFactor = 0.85; 
-            const canvas = await html2canvas(reportRef.value, {
-                scale: 2,
-                useCORS: true,
-                backgroundColor: '#0f172a',
-                windowWidth: reportRef.value.scrollWidth,
-                windowHeight: reportRef.value.scrollHeight
-            });
+            try {
+                // ── Switch charts to light theme for white-bg export ──
+                const chartIds = ['trendChart', 'sentimentChart', 'sourceChart', 'regionChart', 'topicChart', 'visualWordCloud', 'visualEmotionPie'];
+                const savedOptions = {};
+                for (const id of chartIds) {
+                    const el = document.getElementById(id);
+                    if (!el) continue;
+                    const inst = echarts.getInstanceByDom(el);
+                    if (!inst) continue;
+                    savedOptions[id] = inst.getOption();
+                    // Override to light-friendly colors
+                    const lightOverride = {
+                        textStyle: { color: '#333' },
+                    };
+                    // Fix axis colors for line/bar charts
+                    const opt = inst.getOption();
+                    if (opt.xAxis) {
+                        lightOverride.xAxis = opt.xAxis.map(() => ({
+                            axisLine: { lineStyle: { color: '#ccc' } },
+                            axisLabel: { color: '#555' },
+                            splitLine: { lineStyle: { color: '#eee' } },
+                        }));
+                    }
+                    if (opt.yAxis) {
+                        lightOverride.yAxis = opt.yAxis.map(() => ({
+                            axisLine: { lineStyle: { color: '#ccc' } },
+                            axisLabel: { color: '#555' },
+                            splitLine: { lineStyle: { color: '#f0f0f0' } },
+                        }));
+                    }
+                    // Fix series border colors
+                    if (opt.series) {
+                        lightOverride.series = opt.series.map(s => {
+                            const patch = {};
+                            if (s.type === 'pie') {
+                                patch.itemStyle = { borderColor: '#ffffff', borderWidth: 2 };
+                                patch.label = { color: '#333' };
+                            }
+                            if (s.type === 'bar') {
+                                patch.itemStyle = { borderColor: '#ffffff' };
+                            }
+                            return patch;
+                        });
+                    }
+                    if (opt.legend) {
+                        lightOverride.legend = opt.legend.map(() => ({ textStyle: { color: '#555' } }));
+                    }
+                    inst.setOption(lightOverride);
+                }
 
-            const imgData = canvas.toDataURL('image/jpeg', 0.85);
-            const pdfWidth = reportRef.value.scrollWidth * scaleFactor;
-            const pdfHeight = reportRef.value.scrollHeight * scaleFactor;
-            const { jsPDF } = window.jspdf;
-            const pdf = new jsPDF({
-                orientation: 'p',
-                unit: 'px',
-                format: [pdfWidth, pdfHeight]
-            });
+                // ── Build print-friendly HTML container ──
+                const container = document.createElement('div');
+                container.style.cssText = 'position:fixed;left:-9999px;top:0;width:794px;background:#fff;color:#222;font-family:-apple-system,BlinkMacSystemFont,"Noto Sans SC","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.7;padding:48px;box-sizing:border-box;';
+                document.body.appendChild(container);
 
-            pdf.addImage(imgData, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-            
-            // 标记 multimodal
-            if (result.value && result.value.multimodal) {
-                pdf.setTextColor(150);
-                pdf.setFontSize(10);
-                pdf.text("multimodal: true", 20, 20);
+                const escHtml = (s) => (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+                const stripMd = (md) => escHtml(md)
+                    .replace(/#{1,6}\s*/g, '')
+                    .replace(/\*\*(.*?)\*\*/g, '<b>$1</b>')
+                    .replace(/\*(.*?)\*/g, '<em>$1</em>')
+                    .replace(/`(.*?)`/g, '$1')
+                    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+                    .replace(/\n/g, '<br>');
+
+                // Title
+                let html = `<div style="text-align:center;margin-bottom:24px;">
+                    <h1 style="font-size:24px;font-weight:700;color:#111;margin:0 0 8px;">${escHtml(topic.value) || '舆情分析报告'}</h1>
+                    <p style="font-size:12px;color:#888;">${new Date().toLocaleString('zh-CN')}</p>
+                    <hr style="border:none;border-top:1px solid #ddd;margin-top:16px;">
+                </div>`;
+
+                // 1. Overview
+                html += `<h2 style="font-size:16px;color:#222;border-bottom:2px solid #6E6BFF;padding-bottom:4px;margin:20px 0 12px;">一、总览</h2>`;
+                html += `<p>舆情健康度：<b>${data.sentiment_score ?? '—'}</b>/100 &nbsp;&nbsp; 情绪标签：<b>${data.sentiment_label ?? '—'}</b> &nbsp;&nbsp; 热度指数：<b>${data.popularity_score ?? '—'}</b>/100</p>`;
+                if (data.keywords && data.keywords.length) {
+                    html += `<p style="color:#555;">关键词：${data.keywords.join('、')}</p>`;
+                }
+                if (data.sentiment_distribution && data.sentiment_distribution.length) {
+                    html += `<p style="color:#555;">情绪分布：${data.sentiment_distribution.map(d => d.name + ' ' + d.value + '%').join(' | ')}</p>`;
+                }
+
+                // 2. Background
+                if (data.intro_markdown) {
+                    html += `<h2 style="font-size:16px;color:#222;border-bottom:2px solid #6E6BFF;padding-bottom:4px;margin:24px 0 12px;">二、事件溯源</h2>`;
+                    html += `<div style="color:#444;">${stripMd(data.intro_markdown)}</div>`;
+                }
+
+                // 3. Data Analysis + Charts (interspersed with text)
+                html += `<h2 style="font-size:16px;color:#222;border-bottom:2px solid #6E6BFF;padding-bottom:4px;margin:24px 0 12px;">三、数据分析</h2>`;
+                
+                const rawAnalysis = data.data_markdown || data.report_markdown || '';
+                const chartOrder = ['TREND', 'SENTIMENT', 'SOURCE', 'REGION', 'TOPIC'];
+                const parts = rawAnalysis.split(/\[\[CHART:\s*[A-Za-z]+\s*\]\]/);
+                const markers = [...rawAnalysis.matchAll(/\[\[CHART:\s*([A-Za-z]+)\s*\]\]/g)].map(m => m[1].toUpperCase());
+
+                // Before-charts text
+                if (parts[0] && parts[0].trim()) {
+                    html += `<div style="color:#444;margin-bottom:16px;">${stripMd(parts[0])}</div>`;
+                }
+
+                const chartTitleMap = { TREND: '热度趋势', SENTIMENT: '情感分布', SOURCE: '媒体来源分布', REGION: '地域分布', TOPIC: '关联话题' };
+                const chartIdMap = { TREND: 'trendChart', SENTIMENT: 'sentimentChart', SOURCE: 'sourceChart', REGION: 'regionChart', TOPIC: 'topicChart' };
+
+                for (let i = 0; i < markers.length; i++) {
+                    const mk = markers[i];
+                    const cId = chartIdMap[mk];
+                    if (cId) {
+                        html += `<h3 style="font-size:14px;color:#444;margin:16px 0 8px;">▎${chartTitleMap[mk] || mk}</h3>`;
+                        html += `<div id="pdf-placeholder-${cId}" style="text-align:center;margin:8px 0 16px;"></div>`;
+                    }
+                    // Text after this chart marker
+                    if (parts[i + 1] && parts[i + 1].trim()) {
+                        html += `<div style="color:#444;margin-bottom:12px;">${stripMd(parts[i + 1])}</div>`;
+                    }
+                }
+
+                // Any charts not referenced by markers
+                const unreferenced = Object.keys(chartIdMap).filter(k => !markers.includes(k));
+                for (const mk of unreferenced) {
+                    const cId = chartIdMap[mk];
+                    const el = document.getElementById(cId);
+                    if (el && el.offsetHeight > 0) {
+                        html += `<h3 style="font-size:14px;color:#444;margin:16px 0 8px;">▎${chartTitleMap[mk]}</h3>`;
+                        html += `<div id="pdf-placeholder-${cId}" style="text-align:center;margin:8px 0 16px;"></div>`;
+                    }
+                }
+
+                // Visual charts
+                if (data.multimodal) {
+                    for (const vid of ['visualWordCloud', 'visualEmotionPie']) {
+                        const el = document.getElementById(vid);
+                        if (el && el.offsetHeight > 0) {
+                            html += `<div id="pdf-placeholder-${vid}" style="text-align:center;margin:8px 0 16px;"></div>`;
+                        }
+                    }
+                }
+
+                // 4. Conclusion
+                if (data.conclusion_markdown) {
+                    html += `<h2 style="font-size:16px;color:#222;border-bottom:2px solid #6E6BFF;padding-bottom:4px;margin:24px 0 12px;">四、战略研判</h2>`;
+                    html += `<div style="color:#444;">${stripMd(data.conclusion_markdown)}</div>`;
+                }
+
+                container.innerHTML = html;
+
+                // ── Insert chart images into placeholders ──
+                const allChartIds = [...Object.values(chartIdMap), 'visualWordCloud', 'visualEmotionPie'];
+                for (const cId of allChartIds) {
+                    const el = document.getElementById(cId);
+                    const placeholder = container.querySelector(`#pdf-placeholder-${cId}`);
+                    if (!el || !placeholder || el.offsetHeight === 0) continue;
+                    const chartCanvas = await html2canvas(el, {
+                        scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+                    });
+                    const img = document.createElement('img');
+                    img.src = chartCanvas.toDataURL('image/png');
+                    img.style.cssText = 'max-width:100%;height:auto;';
+                    placeholder.appendChild(img);
+                }
+
+                await new Promise(r => setTimeout(r, 200));
+
+                // ── Render container to PDF via html2canvas pages ──
+                const { jsPDF } = window.jspdf;
+                const pdf = new jsPDF({ orientation: 'p', unit: 'pt', format: 'a4' });
+                const pageW = pdf.internal.pageSize.getWidth();
+                const pageH = pdf.internal.pageSize.getHeight();
+
+                const fullCanvas = await html2canvas(container, {
+                    scale: 2, useCORS: true, backgroundColor: '#ffffff', logging: false,
+                    width: 794,
+                });
+
+                const canvasW = fullCanvas.width;
+                const canvasH = fullCanvas.height;
+                const ratio = pageW / canvasW;
+                const scaledH = canvasH * ratio;
+                const pageContentH = pageH - 36; // leave bottom margin for page number
+                const totalPages = Math.ceil(scaledH / pageContentH);
+
+                for (let p = 0; p < totalPages; p++) {
+                    if (p > 0) pdf.addPage();
+                    // Clip the appropriate section of the full canvas
+                    const srcY = Math.round(p * pageContentH / ratio);
+                    const srcH = Math.round(Math.min(pageContentH / ratio, canvasH - srcY));
+                    const pageCanvas = document.createElement('canvas');
+                    pageCanvas.width = canvasW;
+                    pageCanvas.height = srcH;
+                    const pctx = pageCanvas.getContext('2d');
+                    pctx.drawImage(fullCanvas, 0, srcY, canvasW, srcH, 0, 0, canvasW, srcH);
+                    pdf.addImage(pageCanvas.toDataURL('image/png'), 'PNG', 0, 0, pageW, srcH * ratio);
+                    // Page number
+                    pdf.setFontSize(8);
+                    pdf.setTextColor(160);
+                    pdf.text(`${p + 1} / ${totalPages}`, pageW / 2, pageH - 12, { align: 'center' });
+                }
+
+                document.body.removeChild(container);
+
+                // ── Restore chart dark theme ──
+                for (const id of chartIds) {
+                    const el = document.getElementById(id);
+                    if (!el) continue;
+                    const inst = echarts.getInstanceByDom(el);
+                    if (!inst || !savedOptions[id]) continue;
+                    inst.setOption(savedOptions[id], true);
+                }
+
+                pdf.save(`舆情分析报告_${topic.value || 'report'}_${new Date().toISOString().slice(0, 10)}.pdf`);
+                showToast('PDF 导出成功');
+            } catch (e) {
+                console.error('PDF export error:', e);
+                showToast('导出失败: ' + e.message);
+                // Clean up container if still present
+                const leftover = document.querySelector('div[style*="left:-9999px"]');
+                if (leftover) document.body.removeChild(leftover);
             }
-            
-            pdf.save(`舆情分析报告_${Date.now()}.pdf`);
-            activeTab.value = tempTab; // 恢复之前的 Tab
+
+            // Restore charts to dark theme
+            const restoreIds = ['trendChart', 'sentimentChart', 'sourceChart', 'regionChart', 'topicChart', 'visualWordCloud', 'visualEmotionPie'];
+            for (const id of restoreIds) {
+                const el = document.getElementById(id);
+                if (!el) continue;
+                const inst = echarts.getInstanceByDom(el);
+                if (inst) inst.dispose();
+            }
+            activeTab.value = tempTab;
             await nextTick();
-            initCharts(result.value);
+            initCharts(data);
         };
 
         const getScoreColor = (score) => {
@@ -719,39 +1133,39 @@ const app = createApp({
         // ─── Shared Chart Utilities ───────────────────────────────────
         const FONT = "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', 'Noto Sans SC', sans-serif";
         const C = {
-            // Apple-inspired muted palette
-            accent:   '#5e5ce6',   // Apple indigo
-            accent2:  '#7d7aff',
-            accent3:  '#a8a6ff',
-            violet:   '#bf5af2',   // Apple purple
-            cyan:     '#64d2ff',   // Apple cyan
-            cyan2:    '#9de8ff',
-            teal:     '#6ac4dc',   // Apple teal (muted)
-            positive: '#30d158',   // Apple green
-            warning:  '#ffd60a',   // Apple yellow
-            negative: '#ff453a',   // Apple red
-            rose:     '#ff6482',   // Apple pink
-            amber:    '#ff9f0a',   // Apple orange
+            // Frosted-glass palette — muted jewel tones on dark
+            accent:   '#6E6BFF',   // Periwinkle
+            accent2:  '#8B89FF',   // Lighter periwinkle
+            accent3:  '#ABA9FF',   // Pale periwinkle
+            violet:   '#A78BFA',   // Soft violet
+            cyan:     '#67D4E8',   // Frosted cyan
+            cyan2:    '#94E2F2',   // Pale cyan
+            teal:     '#5ECEBD',   // Mint glass
+            positive: '#4ADE80',   // Bright jade
+            warning:  '#FACC15',   // Lemon
+            negative: '#F87171',   // Soft red
+            rose:     '#F472B6',   // Pink glass
+            amber:    '#FB923C',   // Tangerine
             t1:        '#f5f5f7',
-            t2:        '#86868b',
-            t3:        '#6e6e73',
-            t4:        '#48484a',
+            t2:        '#a1a1a6',
+            t3:        '#86868b',
+            t4:        '#58585e',
             dim:       '#3a3a3c',
-            bg:        '#161617',
-            bgCard:    '#1c1c1e',
-            bgElevated:'#2c2c2e',
-            split:     'rgba(255,255,255,0.05)',
-            splitLt:   'rgba(255,255,255,0.03)',
-            border:    'rgba(255,255,255,0.08)',
+            bg:        '#0c0c0e',
+            bgCard:    '#161618',
+            bgElevated:'#1e1e22',
+            split:     'rgba(255,255,255,0.04)',
+            splitLt:   'rgba(255,255,255,0.025)',
+            border:    'rgba(255,255,255,0.07)',
         };
 
         const mkTooltip = (extra = {}) => ({
-            backgroundColor: 'rgba(24,24,27,0.95)',
+            backgroundColor: 'rgba(12,12,16,0.58)',
             borderColor: 'rgba(255,255,255,0.08)',
             borderWidth: 1,
             padding: [10, 14],
             textStyle: { color: C.t1, fontSize: 12, fontFamily: FONT, lineHeight: 20 },
-            extraCssText: 'border-radius:10px;backdrop-filter:blur(12px);box-shadow:0 8px 32px rgba(0,0,0,0.5);',
+            extraCssText: 'border-radius:20px;backdrop-filter:blur(6px) saturate(116%);-webkit-backdrop-filter:blur(6px) saturate(116%);box-shadow:inset 0 1px 0 rgba(255,255,255,0.08),0 8px 24px rgba(0,0,0,0.20);',
             ...extra,
         });
 
@@ -761,9 +1175,9 @@ const app = createApp({
         const commonOption = {
             backgroundColor: 'transparent',
             textStyle: { fontFamily: FONT, color: C.t2 },
-            animationDuration: 800,
+            animationDuration: 900,
             animationEasing: 'cubicOut',
-            animationDelay: idx => idx * 25,
+            animationDelay: idx => idx * 30,
         };
 
         // ─── Trend ────────────────────────────────────────────────────
@@ -800,7 +1214,7 @@ const app = createApp({
                         });
                         return s;
                     },
-                    axisPointer: { type: 'line', lineStyle: { color: 'rgba(255,255,255,0.08)', width: 1 } },
+                    axisPointer: { type: 'line', lineStyle: { color: 'rgba(255,255,255,0.06)', width: 1 } },
                 },
                 legend: {
                     data: ['历史热度', '趋势预测'], top: 0, left: 0,
@@ -810,7 +1224,7 @@ const app = createApp({
                 },
                 xAxis: {
                     type: 'category', data: allDates, boundaryGap: false,
-                    axisLine:  { lineStyle: { color: C.split } },
+                    axisLine:  { lineStyle: { color: 'rgba(255,255,255,0.04)' } },
                     axisLabel: { color: C.t4, fontSize: 11, fontFamily: FONT, margin: 10,
                                  formatter: v => v.length > 5 ? v.slice(5) : v },
                     axisTick:  { show: false },
@@ -820,7 +1234,7 @@ const app = createApp({
                     type: 'value',
                     min: Math.max(0, Math.floor(minVal * 0.88)),
                     max: Math.ceil(maxVal * 1.06),
-                    splitLine: { lineStyle: { color: C.splitLt } },
+                    splitLine: { lineStyle: { color: 'rgba(255,255,255,0.03)', type: 'dashed' } },
                     axisLine:  { show: false },
                     axisLabel: { color: C.t4, fontSize: 11, fontFamily: FONT,
                                  formatter: v => v >= 10000 ? (v/10000).toFixed(1) + 'w' : v },
@@ -831,18 +1245,19 @@ const app = createApp({
                         name: '历史热度', type: 'line',
                         data: [...historyScores, ...new Array(forecastDates.length).fill(null)],
                         smooth: 0.4, symbol: 'circle', symbolSize: 5, showSymbol: false,
-                        itemStyle: { color: C.cyan, borderColor: C.bg, borderWidth: 2 },
+                        itemStyle: { color: C.cyan, borderColor: 'rgba(10,10,14,0.8)', borderWidth: 2 },
                         lineStyle: { width: 2.5, color: C.cyan, cap: 'round' },
                         areaStyle: {
                             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: 'rgba(100,210,255,0.13)' },
-                                { offset: 1, color: 'rgba(100,210,255,0)' },
+                                { offset: 0, color: 'rgba(103,212,232,0.14)' },
+                                { offset: 0.5, color: 'rgba(103,212,232,0.04)' },
+                                { offset: 1, color: 'rgba(103,212,232,0)' },
                             ])
                         },
                         emphasis: { focus: 'series', itemStyle: { borderWidth: 2 } },
                         markArea: safeForecast.length > 0 ? {
                             silent: true,
-                            itemStyle: { color: 'rgba(255,159,10,0.04)' },
+                            itemStyle: { color: 'rgba(251,146,60,0.04)' },
                             data: [[
                                 { xAxis: historyDates[historyDates.length - 1] || '' },
                                 { xAxis: forecastDates[forecastDates.length - 1] || '' },
@@ -850,12 +1265,12 @@ const app = createApp({
                         } : undefined,
                         markLine: safeForecast.length > 0 ? {
                             silent: true, symbol: ['none', 'none'],
-                            lineStyle: { color: 'rgba(255,159,10,0.3)', type: [5, 4], width: 1 },
+                            lineStyle: { color: 'rgba(251,146,60,0.28)', type: [5, 4], width: 1 },
                             label: {
                                 show: true, position: 'end',
                                 formatter: 'AI 预测',
                                 color: C.amber, fontSize: 10, fontFamily: FONT,
-                                padding: [3, 7], backgroundColor: 'rgba(255,159,10,0.1)',
+                                padding: [3, 7], backgroundColor: 'rgba(251,146,60,0.1)',
                                 borderRadius: 4,
                             },
                             data: [{ xAxis: historyDates[historyDates.length - 1] }],
@@ -869,8 +1284,9 @@ const app = createApp({
                         itemStyle: { color: C.amber },
                         areaStyle: {
                             color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-                                { offset: 0, color: 'rgba(255,159,10,0.08)' },
-                                { offset: 1, color: 'rgba(255,159,10,0)' },
+                                { offset: 0, color: 'rgba(251,146,60,0.10)' },
+                                { offset: 0.5, color: 'rgba(251,146,60,0.03)' },
+                                { offset: 1, color: 'rgba(251,146,60,0)' },
                             ])
                         },
                     },
@@ -946,7 +1362,7 @@ const app = createApp({
                     type: 'pie',
                     radius: ['52%', '74%'],
                     center: ['50%', '48%'],
-                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    itemStyle: { borderRadius: 6, borderColor: 'rgba(10,10,14,0.8)', borderWidth: 3 },
                     label: { show: false },
                     labelLine: { show: false },
                     selectedMode: false,
@@ -995,7 +1411,7 @@ const app = createApp({
                     type: 'pie',
                     radius: ['40%', '66%'],
                     center: ['50%', '44%'],
-                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    itemStyle: { borderRadius: 6, borderColor: 'rgba(10,10,14,0.8)', borderWidth: 3 },
                     label: {
                         show: true, position: 'outside',
                         formatter: '{b}\n{d}%',
@@ -1055,7 +1471,7 @@ const app = createApp({
                             value: item.value,
                             itemStyle: {
                                 borderRadius: [0, 6, 6, 0],
-                                color: `rgba(94,92,230,${alpha.toFixed(2)})`,
+                                color: `rgba(110,107,255,${alpha.toFixed(2)})`,
                             },
                         };
                     }),
@@ -1113,7 +1529,7 @@ const app = createApp({
                             value: item.value,
                             itemStyle: {
                                 borderRadius: [0, 6, 6, 0],
-                                color: `rgba(191,90,242,${alpha.toFixed(2)})`,
+                                color: `rgba(167,139,250,${alpha.toFixed(2)})`,
                             },
                         };
                     }),
@@ -1214,7 +1630,7 @@ const app = createApp({
                     radius: ['54%', '74%'],
                     center: ['50%', '50%'],
                     avoidLabelOverlap: false,
-                    itemStyle: { borderRadius: 6, borderColor: C.bg, borderWidth: 3 },
+                    itemStyle: { borderRadius: 6, borderColor: 'rgba(10,10,14,0.8)', borderWidth: 3 },
                     label: { show: false },
                     labelLine: { show: false },
                     selectedMode: false,
@@ -1254,7 +1670,15 @@ const app = createApp({
             analyze,
             hotTopics,
             applyHotTopic,
-            dataSegments,
+            dataSegments: computed(() => []),
+            analysisText,
+            analysisSegments,
+            latestTrendScore,
+            trendDirection,
+            dominantSentiment,
+            topSource,
+            topRegion,
+            topTopic,
             mdParser,
             getScoreColor,
             reportRef,
