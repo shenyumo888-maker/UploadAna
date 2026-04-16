@@ -12,3 +12,5 @@ redis
 rq
 sqlmodel
 httpx
+loguru
+pydantic_settings
